@@ -26,7 +26,7 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 from loguru import logger
 
 from data_generation.core.configuration import ClinicalNotesGeneratorConfiguration
-from data_generation.core.enums import APIProvider, ClinicalNoteType
+from data_generation.core.enums import ClinicalNoteType
 from data_generation.generators.clinical_notes_generator import ClinicalNotesGenerator
 
 

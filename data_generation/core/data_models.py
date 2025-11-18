@@ -9,7 +9,7 @@ Author: RhythmX AI Team
 Date: November 2025
 """
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import List, Dict, Optional
 
 

@@ -20,7 +20,8 @@ from ..core.data_models import ClinicalNote
 
 def save_notes_to_json(
     clinical_notes: List[ClinicalNote],
-    output_file_path: str
+    output_file_path: str,
+    verbose_output: bool = True
 ) -> str:
     """
     Save clinical notes to a JSON file.
@@ -34,6 +35,9 @@ def save_notes_to_json(
     Args:
         clinical_notes: List of ClinicalNote objects to save
         output_file_path: Path where JSON file will be saved
+        verbose_output: If True, include all fields. If False, exclude non-essential fields
+                       (generation_timestamp, validation_status, confidence_score, and
+                       most icd10_code_details fields except icd10_code and icd10_name)
         
     Returns:
         Absolute path to the saved file
@@ -57,16 +61,36 @@ def save_notes_to_json(
         # Step 2: Convert ClinicalNote objects to dictionaries
         notes_data = []
         for note in clinical_notes:
+            # Build base note dictionary
             note_dict = {
                 "note_id": note.note_id,
                 "note_type": note.note_type,
                 "clinical_content": note.clinical_content,
                 "assigned_icd10_codes": note.assigned_icd10_codes,
-                "icd10_code_details": note.icd10_code_details,
-                "generation_timestamp": note.generation_timestamp,
-                "validation_status": note.validation_status,
-                "validation_details": note.validation_details
             }
+            
+            if verbose_output:
+                # Include all fields when verbose
+                note_dict["icd10_code_details"] = note.icd10_code_details
+                note_dict["generation_timestamp"] = note.generation_timestamp
+                note_dict["validation_status"] = note.validation_status
+                note_dict["validation_details"] = note.validation_details
+            else:
+                # Filter icd10_code_details to only include icd10_code and icd10_name
+                filtered_code_details = []
+                for code_detail in note.icd10_code_details:
+                    filtered_code_details.append({
+                        "icd10_code": code_detail.get("icd10_code"),
+                        "icd10_name": code_detail.get("icd10_name")
+                    })
+                note_dict["icd10_code_details"] = filtered_code_details
+                
+                # Filter validation_details to exclude confidence_score
+                validation_details = dict(note.validation_details)
+                validation_details.pop("confidence_score", None)
+                note_dict["validation_details"] = validation_details
+                # Note: generation_timestamp and validation_status are excluded
+            
             notes_data.append(note_dict)
         
         # Step 3: Write JSON file with proper formatting

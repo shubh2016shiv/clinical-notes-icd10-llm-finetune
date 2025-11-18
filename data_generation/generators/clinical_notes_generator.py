@@ -12,9 +12,10 @@ import random
 from dataclasses import asdict
 from datetime import datetime
 from pathlib import Path
-from typing import List, Optional, Tuple
+from typing import List, Optional
 
 from loguru import logger
+from tqdm import tqdm
 
 from ..clients.gemini_api_client import GeminiAPIClient
 from ..clients.openai_api_client import OpenAIAPIClient
@@ -274,7 +275,7 @@ class ClinicalNotesGenerator:
         total_notes_count: int = 10,
         note_types: Optional[List[ClinicalNoteType]] = None,
         min_diagnoses: int = 2,
-        max_diagnoses: int = 5
+        max_diagnoses: int = 10
     ) -> List[ClinicalNote]:
         """
         Generate multiple clinical notes with various types and diagnoses.
@@ -322,7 +323,14 @@ class ClinicalNotesGenerator:
         failed_count = 0
         skipped_count = 0
         
-        # Step 3: Generate each note in loop
+        # Step 3: Generate each note in loop with progress bar
+        progress_bar = tqdm(
+            total=total_notes_count,
+            desc="Generating clinical notes",
+            unit="note",
+            ncols=120
+        )
+        
         for note_index in range(total_notes_count):
             logger.info(f"\n[{note_index + 1}/{total_notes_count}] ", )
             
@@ -332,6 +340,7 @@ class ClinicalNotesGenerator:
                 
                 # Step 3.2: Select random number of diagnoses
                 diagnoses_count = random.randint(min_diagnoses, max_diagnoses)
+                logger.info(f"Selected {diagnoses_count} ICD-10 code(s) (range: {min_diagnoses}-{max_diagnoses})")
                 
                 # Step 3.3: Generate note (may return None if validation fails)
                 clinical_note = self.generate_single_clinical_note(
@@ -345,16 +354,36 @@ class ClinicalNotesGenerator:
                     logger.warning(
                         f"Note [{note_index + 1}] skipped due to low validation confidence"
                     )
+                    progress_bar.set_postfix({
+                        "Success": successful_count,
+                        "Failed": failed_count,
+                        "Skipped": skipped_count
+                    })
+                    progress_bar.update(1)
                     continue
                 
                 generated_notes.append(clinical_note)
                 successful_count += 1
+                progress_bar.set_postfix({
+                    "Success": successful_count,
+                    "Failed": failed_count,
+                    "Skipped": skipped_count
+                })
+                progress_bar.update(1)
                 
             except Exception as error:
                 # Step 3.5: Handle errors gracefully
                 failed_count += 1
                 logger.error(f"ERROR generating note [{note_index + 1}]: {error}")
+                progress_bar.set_postfix({
+                    "Success": successful_count,
+                    "Failed": failed_count,
+                    "Skipped": skipped_count
+                })
+                progress_bar.update(1)
                 continue
+        
+        progress_bar.close()
         
         # Step 4: Log batch generation summary
         logger.info("=" * 80)
@@ -457,7 +486,8 @@ class ClinicalNotesGenerator:
         # Step 3: Save notes to JSON file
         saved_path = save_notes_to_json(
             clinical_notes=clinical_notes,
-            output_file_path=output_path
+            output_file_path=output_path,
+            verbose_output=self.configuration.verbose_generated_output
         )
         
         # Step 4: Generate and save summary report

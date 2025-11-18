@@ -42,6 +42,7 @@ class ClinicalNotesGeneratorConfiguration:
         max_output_tokens: Maximum number of tokens in generated output
         enable_logging: Flag to enable or disable detailed logging
         log_file_path: Path to the log file for tracking generation progress
+        verbose_generated_output: Flag to control JSON output verbosity (True=all fields, False=minimal fields)
     
     Example:
         >>> config = ClinicalNotesGeneratorConfiguration.load_from_environment()
@@ -63,8 +64,8 @@ class ClinicalNotesGeneratorConfiguration:
     # Step 4: Model Configuration
     gemini_model_name: str = "gemini-2.5-flash"
     openai_model_name: str = "gpt-4o"
-    generation_temperature: float = 0.01
-    generation_top_p: float = 0.95
+    generation_temperature: float = 0.0
+    generation_top_p: float = 1.00
     generation_top_k: int = 40
     max_output_tokens: int = 8192
 
@@ -75,6 +76,9 @@ class ClinicalNotesGeneratorConfiguration:
     # Step 6: Logging Configuration
     enable_logging: bool = True
     log_file_path: str = "data_generation/clinical_notes_generation.log"
+    
+    # Step 7: Output Configuration
+    verbose_generated_output: bool = False
     
     @staticmethod
     def load_from_environment(
@@ -198,16 +202,21 @@ class ClinicalNotesGeneratorConfiguration:
             os.getenv("VALIDATION_MAX_RETRIES", "2")
         )
         
-        # Step 8: Create configuration object
+        # Step 8: Extract output configuration from environment
+        verbose_output_str = os.getenv("VERBOSE_GENERATED_OUTPUT", "true").lower()
+        verbose_generated_output = verbose_output_str in ("true", "1", "yes")
+        
+        # Step 9: Create configuration object
         configuration = ClinicalNotesGeneratorConfiguration(
             api_provider=api_provider,
             gemini_api_key=gemini_api_key,
             openai_api_key=openai_api_key,
             validation_confidence_threshold=validation_confidence_threshold,
-            validation_max_retries=validation_max_retries
+            validation_max_retries=validation_max_retries,
+            verbose_generated_output=verbose_generated_output
         )
         
-        # Step 9: Log configuration summary (without exposing full API keys)
+        # Step 10: Log configuration summary (without exposing full API keys)
         masked_api_key = selected_api_key[:8] + "..." + selected_api_key[-4:] if len(selected_api_key) > 12 else "***"
         logger.info("=" * 80)
         logger.info("CLINICAL NOTES GENERATOR CONFIGURATION LOADED")
@@ -224,6 +233,7 @@ class ClinicalNotesGeneratorConfiguration:
         logger.info(f"Output Directory: {configuration.output_directory}")
         logger.info(f"Validation Confidence Threshold: {configuration.validation_confidence_threshold}%")
         logger.info(f"Validation Max Retries: {configuration.validation_max_retries}")
+        logger.info(f"Verbose Generated Output: {configuration.verbose_generated_output}")
         logger.info(f"Log File: {configuration.log_file_path}")
         logger.info("=" * 80)
         
