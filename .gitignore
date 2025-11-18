@@ -1,0 +1,18 @@
+# Python
+__pycache__/
+*.py[cod]
+*.pyc
+
+# Virtual Environments
+.venv/
+venv/
+.uv/
+
+# IDE
+.idea/
+.vscode/
+
+# Obsolete files/directories (matches at any depth)
+**/*_OBSELETE/
+**/*_OBSELETE.py
+**/*_OBSELETE
