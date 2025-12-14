@@ -1,0 +1,29 @@
+# Core Data Processing
+pandas>=2.0.0           # Data manipulation and analysis (DataFrames)
+numpy>=1.24.0           # Numerical computing support
+
+# Resilience and Reliability
+tenacity>=8.2.0         # Retry logic for robust API calls and error handling
+
+# Data Storage and Format
+pyarrow>=12.0.0         # Efficient Parquet file I/O handling
+
+# User Interface / Progress
+tqdm>=4.65.0            # Progress bars for long-running operations
+
+# Configuration
+pyyaml>=6.0             # Parsing YAML configuration files (e.g., config.yaml)
+python-dotenv>=1.0.0    # Loading environment variables from .env files
+
+# Logging
+loguru>=0.7.0           # Simplified and structured logging
+
+# LLM and API Clients
+google-generativeai>=0.3.0 # Client for Gemini/Google PaLM APIs
+openai>=1.0.0           # Client for OpenAI GPT APIs
+requests>=2.31.0        # HTTP library for general API requests (e.g., ICD-10 API)
+
+# Vector Search and Embeddings (formerly in requirements_vector.txt)
+sentence-transformers>=3.0.0 # Generating text embeddings for vector search
+scikit-learn>=1.3.0     # Machine learning utilities (e.g., cosine similarity, clustering)
+tf-keras>=2.20.0        # Deep learning backend needed for some transformer models

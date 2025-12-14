@@ -16,3 +16,12 @@ venv/
 **/*_OBSELETE/
 **/*_OBSELETE.py
 **/*_OBSELETE
+
+# Data and Artifacts
+*.npy
+*.pkl
+*.log
+test_output.txt
+.ruff_cache/
+.pytest_cache/
+.env
