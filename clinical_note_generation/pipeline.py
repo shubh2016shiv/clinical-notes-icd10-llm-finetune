@@ -54,7 +54,7 @@ from clinical_note_generation.repository import FileBasedICD10Repository
 from clinical_note_generation.selection import CodeSelector
 from clinical_note_generation.generation import NoteGenerator
 from clinical_note_generation.validation import NoteValidator
-from clinical_note_generation.clients import GeminiClient
+from clinical_note_generation.clients import GeminiClient, OpenAIClient
 
 
 # =============================================================================
@@ -222,7 +222,7 @@ class ClinicalNotePipeline:
             min_codes = self._config.min_codes_per_note
             max_codes = self._config.max_codes_per_note
 
-        logger.info(f"Generating {count} {note_type.value} notes | " f"Profile: {profile}")
+        logger.info(f"Generating {count} {note_type.value} notes | Profile: {profile}")
 
         generated_notes: List[ClinicalNote] = []
 
@@ -255,13 +255,11 @@ class ClinicalNotePipeline:
                 self._notes_generated += 1
 
                 logger.debug(
-                    f"Generated note {i+1}/{count} | "
-                    f"ID: {note.note_id} | "
-                    f"Valid: {note.is_valid}"
+                    f"Generated note {i + 1}/{count} | ID: {note.note_id} | Valid: {note.is_valid}"
                 )
 
             except Exception as e:
-                logger.error(f"Failed to generate note {i+1}: {e}")
+                logger.error(f"Failed to generate note {i + 1}: {e}")
                 # Continue with remaining notes
                 continue
 
@@ -400,10 +398,21 @@ class ClinicalNotePipeline:
                 rate_limit_delay=config.rate_limit_delay,
                 max_retries=config.max_retries,
             )
+        elif config.llm_provider == "openai":
+            if not config.openai_api_key:
+                raise ConfigurationError(
+                    "OpenAI API key required", context={"setting": "OPENAI_API_KEY"}
+                )
+            return OpenAIClient(
+                api_key=config.openai_api_key,
+                model_name=config.openai_model,
+                rate_limit_delay=config.rate_limit_delay,
+                max_retries=config.max_retries,
+            )
         else:
             raise ConfigurationError(
                 f"Unsupported LLM provider: {config.llm_provider}",
-                context={"supported": ["gemini"]},
+                context={"supported": ["gemini", "openai"]},
             )
 
     # =========================================================================

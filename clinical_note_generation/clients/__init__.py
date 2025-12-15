@@ -24,9 +24,11 @@ from clinical_note_generation.clients.llm_client import (
     BaseLLMClient,
 )
 from clinical_note_generation.clients.gemini_client import GeminiClient
+from clinical_note_generation.clients.openai_client import OpenAIClient
 
 __all__ = [
     "LLMClientProtocol",
     "BaseLLMClient",
     "GeminiClient",
+    "OpenAIClient",
 ]
