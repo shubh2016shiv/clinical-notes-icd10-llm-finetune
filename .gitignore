@@ -32,3 +32,6 @@ data_generation/*.json
 data/
 generated_clinical_notes/
 data_generation/generated_clinical_notes/
+
+# Exclude entire data_generation folder
+data_generation/
