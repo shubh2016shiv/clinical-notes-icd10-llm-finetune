@@ -25,3 +25,10 @@ test_output.txt
 .ruff_cache/
 .pytest_cache/
 .env
+
+# Large data files
+clinical_note_generation/data/*.json
+data_generation/*.json
+data/
+generated_clinical_notes/
+data_generation/generated_clinical_notes/
