@@ -29,9 +29,18 @@ test_output.txt
 # Large data files
 clinical_note_generation/data/*.json
 data_generation/*.json
-data/
+data/extracted/
+data/raw/
+data/processed/
 generated_clinical_notes/
 data_generation/generated_clinical_notes/
 
 # Exclude entire data_generation folder
 data_generation/
+
+# Fine-tuning outputs (models, checkpoints, logs)
+icd10_fine_tune/outputs/
+icd10_fine_tune/data/processed/
+*.pth
+*.bin
+*.safetensors

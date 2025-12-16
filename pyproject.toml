@@ -2,7 +2,7 @@
 name = "clinical-notes-icd-10-finetuning"
 version = "2.0.0"
 description = "MIMIC-IV clinical notes and ICD-10 diagnosis code extraction and processing pipeline"
-readme = "MIMIC_VI_Data_Extract/README.md"
+readme = "icd10_fine_tune/README.md"
 requires-python = ">=3.9"
 authors = [
     {name = "RhythmX AI Team"}
@@ -31,6 +31,28 @@ dev = [
     "ruff>=0.1.0",
     "mypy>=1.0.0",
     "pre-commit>=3.5.0",
+]
+
+# Fine-tuning dependencies for ICD-10 code extraction
+# Install with: uv pip install -e ".[finetune]"
+#
+# EDUCATIONAL NOTE - Fine-Tuning Stack:
+# - unsloth: Memory-optimized fine-tuning (2x faster, 50% less VRAM)
+# - peft: Parameter-Efficient Fine-Tuning (LoRA implementation)
+# - trl: Transformer Reinforcement Learning (SFTTrainer)
+# - bitsandbytes: 4-bit/8-bit quantization for VRAM reduction
+# - accelerate: Multi-GPU training support (DDP)
+# - evidently: Model evaluation and monitoring dashboard
+finetune = [
+    "transformers>=4.41.0",
+    "peft>=0.11.0",
+    "trl>=0.9.0",
+    "accelerate>=0.30.0",
+    "bitsandbytes>=0.43.0",
+    "datasets>=2.19.0",
+    "evidently>=0.4.20",
+    "pydantic>=2.7.0",
+    "pydantic-settings>=2.2.0",
 ]
 
 [build-system]

@@ -125,7 +125,7 @@ def main():
 
             # Show sample codes from first note
             if notes:
-                sample_codes = [f"{code.code}" for code in notes[0].icd10_codes[:3]]
+                sample_codes = [f"{code.code}" for code in notes[0].assigned_codes[:3]]
                 print(f"  Sample codes: {', '.join(sample_codes)}")
 
             print()
@@ -192,11 +192,13 @@ def main():
         print("-" * 80)
 
         # Count validation issues
-        notes_with_issues = [n for n in all_notes if not n.is_valid and n.validation_issues]
+        notes_with_issues = [n for n in all_notes if not n.is_valid and n.validation_result]
         if notes_with_issues:
             issue_types = {}
             for note in notes_with_issues:
-                for issue in note.validation_issues:
+                # Combine critical issues and warnings from validation_result
+                all_issues = note.validation_result.critical_issues + note.validation_result.warnings
+                for issue in all_issues:
                     issue_types[issue] = issue_types.get(issue, 0) + 1
 
             print("Common validation issues:")
