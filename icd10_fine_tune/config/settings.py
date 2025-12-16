@@ -37,43 +37,43 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 class FineTuningSettings(BaseSettings):
     """
     Centralized configuration for ICD-10 fine-tuning system.
-    
+
     This class defines all tunable parameters for the fine-tuning pipeline.
     Parameters can be overridden via environment variables (prefixed with FT_).
-    
+
     Design Philosophy:
     - Explicit over implicit: Every parameter has a clear purpose
     - Safe defaults: Default values are conservative (optimized for 6GB VRAM)
     - Validation: All paths and values are validated at instantiation
     """
-    
+
     model_config = SettingsConfigDict(
         env_file=".env",
         env_prefix="FT_",  # All environment variables prefixed with FT_
         case_sensitive=False,
-        extra="ignore"  # Ignore unknown env vars
+        extra="ignore",  # Ignore unknown env vars
     )
-    
+
     # ============================================================================
     # DATA PATHS
     # ============================================================================
     # These define where to find input data and where to save outputs.
-    
+
     raw_data_path: Path = Field(
         default=Path("data/extracted/multi_profile_clinical_notes_20251215_215353.json"),
-        description="Path to raw clinical notes JSON file"
+        description="Path to raw clinical notes JSON file",
     )
-    
+
     processed_data_dir: Path = Field(
         default=Path("icd10_fine_tune/data/processed"),
-        description="Directory to save processed training/validation data"
+        description="Directory to save processed training/validation data",
     )
-    
+
     output_dir: Path = Field(
         default=Path("icd10_fine_tune/outputs"),
-        description="Root directory for all outputs (models, logs, reports)"
+        description="Root directory for all outputs (models, logs, reports)",
     )
-    
+
     # ============================================================================
     # MODEL SELECTION
     # ============================================================================
@@ -84,22 +84,21 @@ class FineTuningSettings(BaseSettings):
     # - Phi-3 Mini: 3.8B params, strong reasoning, medical domain-friendly
     # - Gemma-2b: 2B params, more conservative VRAM usage
     # - Qwen-1.5-1.8B: 1.8B params, smallest option if other models OOM
-    
+
     model_id: str = Field(
         default="Qwen/Qwen1.5-1.8B-Chat",
-        description="HuggingFace model identifier (use unsloth variants for better memory efficiency)"
+        description="HuggingFace model identifier (use unsloth variants for better memory efficiency)",
     )
-    
+
     model_variant: Literal["phi3", "gemma2b", "qwen1.5"] = Field(
-        default="qwen1.5",
-        description="Model variant for configuration lookup in model_registry"
+        default="qwen1.5", description="Model variant for configuration lookup in model_registry"
     )
-    
+
     use_unsloth: bool = Field(
         default=True,  # Enabled for Linux (2x faster, 50% less VRAM)
-        description="Use Unsloth's optimized model loading (2x faster, 50% less VRAM)"
+        description="Use Unsloth's optimized model loading (2x faster, 50% less VRAM)",
     )
-    
+
     # ============================================================================
     # QUANTIZATION SETTINGS
     # ============================================================================
@@ -110,27 +109,24 @@ class FineTuningSettings(BaseSettings):
     # - INT8: 8 bits per parameter = ~3.8GB
     # - INT4 (4-bit): 4 bits per parameter = ~1.9GB
     # With 6GB VRAM, 4-bit is essential to leave room for gradients and activations.
-    
+
     load_in_4bit: bool = Field(
         default=True,  # Enabled for Linux with CUDA (critical for 6GB VRAM)
-        description="Load model in 4-bit quantization (critical for 6GB VRAM)"
+        description="Load model in 4-bit quantization (critical for 6GB VRAM)",
     )
-    
+
     bnb_4bit_compute_dtype: str = Field(
-        default="float16",
-        description="Compute dtype for 4-bit quantization (float16 for RTX 2060)"
+        default="float16", description="Compute dtype for 4-bit quantization (float16 for RTX 2060)"
     )
-    
+
     bnb_4bit_quant_type: str = Field(
-        default="nf4",
-        description="Quantization type: 'nf4' (normal float 4) is optimal for LLMs"
+        default="nf4", description="Quantization type: 'nf4' (normal float 4) is optimal for LLMs"
     )
-    
+
     use_nested_quant: bool = Field(
-        default=True,
-        description="Double quantization for additional memory savings"
+        default=True, description="Double quantization for additional memory savings"
     )
-    
+
     # ============================================================================
     # LORA CONFIGURATION
     # ============================================================================
@@ -146,30 +142,33 @@ class FineTuningSettings(BaseSettings):
     #   Typical range: 8-64. We use 16 as a balance.
     # - alpha: Scaling factor. Usually set equal to r or 2*r.
     # - dropout: Regularization to prevent overfitting on small datasets.
-    
+
     lora_r: int = Field(
         default=16,
-        description="LoRA rank (adapter matrix dimension). Higher = more capacity but more VRAM."
+        description="LoRA rank (adapter matrix dimension). Higher = more capacity but more VRAM.",
     )
-    
+
     lora_alpha: int = Field(
-        default=16,
-        description="LoRA scaling factor. Common to set equal to rank."
+        default=16, description="LoRA scaling factor. Common to set equal to rank."
     )
-    
+
     lora_dropout: float = Field(
-        default=0.05,
-        description="Dropout probability for LoRA layers (prevents overfitting)"
+        default=0.05, description="Dropout probability for LoRA layers (prevents overfitting)"
     )
-    
+
     lora_target_modules: List[str] = Field(
         default=[
-            "q_proj", "k_proj", "v_proj", "o_proj",  # Attention layers
-            "gate_proj", "up_proj", "down_proj"       # MLP layers
+            "q_proj",
+            "k_proj",
+            "v_proj",
+            "o_proj",  # Attention layers
+            "gate_proj",
+            "up_proj",
+            "down_proj",  # MLP layers
         ],
-        description="Which model layers to apply LoRA adapters to"
+        description="Which model layers to apply LoRA adapters to",
     )
-    
+
     # ============================================================================
     # TRAINING HYPERPARAMETERS
     # ============================================================================
@@ -178,68 +177,64 @@ class FineTuningSettings(BaseSettings):
     # EDUCATIONAL NOTE - Batch Size & Gradient Accumulation:
     # With 6GB VRAM, we can only fit batch_size=1 in memory. But small batches
     # lead to noisy gradients. Solution: Gradient Accumulation.
-    # 
+    #
     # Instead of updating after every sample, we accumulate gradients over
     # multiple steps (e.g., 4), then update. This simulates batch_size=4 without
     # the memory cost.
     #
     # Effective Batch Size = per_device_batch_size * gradient_accumulation_steps * num_gpus
-    
+
     per_device_train_batch_size: int = Field(
-        default=1,
-        description="Batch size per GPU. MUST be 1 for 6GB VRAM."
+        default=1, description="Batch size per GPU. MUST be 1 for 6GB VRAM."
     )
-    
+
     gradient_accumulation_steps: int = Field(
         default=4,
-        description="Accumulate gradients over N steps before updating (simulates larger batch)"
+        description="Accumulate gradients over N steps before updating (simulates larger batch)",
     )
-    
+
     learning_rate: float = Field(
         default=2e-4,
-        description="Peak learning rate. Standard for LoRA fine-tuning is 1e-4 to 5e-4."
+        description="Peak learning rate. Standard for LoRA fine-tuning is 1e-4 to 5e-4.",
     )
-    
+
     num_train_epochs: int = Field(
-        default=3,
-        description="Number of full passes through the training data"
+        default=3, description="Number of full passes through the training data"
     )
-    
+
     max_steps: int = Field(
-        default=-1,
-        description="Max training steps (overrides num_train_epochs if > 0)"
+        default=-1, description="Max training steps (overrides num_train_epochs if > 0)"
     )
-    
+
     warmup_ratio: float = Field(
         default=0.03,
-        description="Fraction of training steps for learning rate warmup (stabilizes early training)"
+        description="Fraction of training steps for learning rate warmup (stabilizes early training)",
     )
-    
+
     lr_scheduler_type: str = Field(
-        default="cosine",
-        description="Learning rate schedule: 'cosine', 'linear', or 'constant'"
+        default="cosine", description="Learning rate schedule: 'cosine', 'linear', or 'constant'"
     )
-    
+
     # ============================================================================
     # MEMORY OPTIMIZATION
     # ============================================================================
     # These settings are critical for fitting training on 6GB VRAM.
-    
+
     max_seq_length: int = Field(
-        default=512,
-        description="Maximum sequence length in tokens. Reduced to 512 for 6GB VRAM (can increase if needed)."
+        default=1024,
+        description="Maximum sequence length in tokens. Set to 1024 for clinical notes (can reduce if VRAM constrained).",
     )
-    
+
     gradient_checkpointing: bool = Field(
         default=True,
-        description="Trade compute for memory (40% VRAM reduction, 20% slower training)"
+        description="Trade compute for memory (40% VRAM reduction, 20% slower training)",
     )
-    
+
     optim: str = Field(
         default="paged_adamw_8bit",
-        description="Optimizer: 'paged_adamw_8bit' uses less VRAM than standard AdamW"
+        description="Optimizer: 'paged_adamw_8bit' uses less VRAM than standard AdamW",
     )
-    
+
     # ============================================================================
     # MULTI-GPU SETTINGS (FOR FUTURE SCALING)
     # ============================================================================
@@ -249,75 +244,59 @@ class FineTuningSettings(BaseSettings):
     # DDP replicates the model across GPUs. Each GPU processes a different batch,
     # then gradients are averaged before updating. This scales training linearly
     # with GPU count.
-    
+
     use_ddp: bool = Field(
-        default=False,
-        description="Enable Distributed Data Parallel (set to True for multi-GPU)"
+        default=False, description="Enable Distributed Data Parallel (set to True for multi-GPU)"
     )
-    
+
     world_size: int = Field(
-        default=1,
-        description="Number of GPUs to use (auto-detected if not specified)"
+        default=1, description="Number of GPUs to use (auto-detected if not specified)"
     )
-    
+
     # ============================================================================
     # LOGGING & CHECKPOINTING
     # ============================================================================
-    
-    logging_steps: int = Field(
-        default=10,
-        description="Log training metrics every N steps"
-    )
-    
-    save_steps: int = Field(
-        default=100,
-        description="Save checkpoint every N steps"
-    )
-    
+
+    logging_steps: int = Field(default=10, description="Log training metrics every N steps")
+
+    save_steps: int = Field(default=100, description="Save checkpoint every N steps")
+
     save_total_limit: int = Field(
-        default=3,
-        description="Keep only the last N checkpoints (saves disk space)"
+        default=3, description="Keep only the last N checkpoints (saves disk space)"
     )
-    
+
     # ============================================================================
     # EVIDENTLY AI INTEGRATION
     # ============================================================================
-    
+
     evidently_api_key: str = Field(
-        default="",
-        description="Evidently AI API key for cloud dashboard (from .env)"
+        default="", description="Evidently AI API key for cloud dashboard (from .env)"
     )
-    
+
     evidently_project_name: str = Field(
-        default="icd10-fine-tuning",
-        description="Project name in Evidently Cloud"
+        default="icd10-fine-tuning", description="Project name in Evidently Cloud"
     )
-    
+
     evidently_workspace: str = Field(
-        default="default",
-        description="Workspace name in Evidently Cloud"
+        default="default", description="Workspace name in Evidently Cloud"
     )
-    
+
     # ============================================================================
     # DATA FORMAT SETTINGS
     # ============================================================================
-    
+
     validation_split: float = Field(
-        default=0.2,
-        description="Fraction of data to use for validation"
+        default=0.2, description="Fraction of data to use for validation"
     )
-    
-    random_seed: int = Field(
-        default=42,
-        description="Random seed for reproducibility"
-    )
-    
+
+    random_seed: int = Field(default=42, description="Random seed for reproducibility")
+
     @field_validator("raw_data_path", "processed_data_dir", "output_dir")
     @classmethod
     def validate_paths(cls, v: Path) -> Path:
         """
         Validate that paths are properly formed.
-        
+
         WHY THIS VALIDATION:
         We want to fail fast at startup if paths are misconfigured, rather than
         discovering path errors hours into a training run.
@@ -325,15 +304,15 @@ class FineTuningSettings(BaseSettings):
         if not isinstance(v, Path):
             v = Path(v)
         return v
-    
+
     def get_checkpoint_dir(self) -> Path:
         """Get the directory where model checkpoints will be saved."""
         return self.output_dir / "checkpoints"
-    
+
     def get_logs_dir(self) -> Path:
         """Get the directory where training logs will be saved."""
         return self.output_dir / "logs"
-    
+
     def get_reports_dir(self) -> Path:
         """Get the directory where Evidently reports will be saved."""
         return self.output_dir / "reports"
