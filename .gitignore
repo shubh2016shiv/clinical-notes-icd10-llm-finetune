@@ -34,6 +34,9 @@ data/raw/
 data/processed/
 generated_clinical_notes/
 data_generation/generated_clinical_notes/
+clinical_note_generation_v2/.chroma*/
+clinical_note_generation_v2/.faiss/
+clinical_note_generation_v2/runs/
 
 # Exclude entire data_generation folder
 data_generation/
@@ -44,3 +47,11 @@ icd10_fine_tune/data/processed/
 *.pth
 *.bin
 *.safetensors
+
+# Clinical note generation v3 intermediate artifacts and caches
+clinical_note_generation_v3/.faiss/
+clinical_note_generation_v3/.icd_rules/
+clinical_note_generation_v3/runs/
+clinical_note_generation_v3/sample_data/audit_rows.jsonl
+clinical_note_generation_v3/sample_data/batch_metrics.json
+clinical_note_generation_v3/sample_data/clinical_notes_*.json

@@ -20,15 +20,17 @@ REVISION_PROMPT_ID = "clinical_note_revision"
 REVISION_PROMPT_VERSION = "v2_centralized"
 
 ANTI_COPY_RULES = [
-    "Do not leak ICD code strings anywhere in the note.",
+    "CRITICAL: Never write any ICD-10-CM, CPT, or other alphanumeric billing codes anywhere in the note — not in parentheses after diagnoses, not in problem lists, not in assessments, not anywhere. Clinical notes are written in clinical language only.",
     "Do not copy or near-copy official ICD short or long description phrasing.",
     "Do not write ontology-like prose, code explanations, or label-expansion definitions.",
+    "Do not annotate diagnosis names with classification codes. Write the clinical condition in natural language as a clinician would document it.",
 ]
 
 BAD_STYLE_EXAMPLES = [
-    'Bad: "The patient has essential primary hypertension, which is characterized by elevated blood pressure."',
-    'Bad: "Diagnosis: Adjustment disorder with mixed anxiety and depressed mood."',
-    'Bad: "Plan: Address diabetes. Address hypertension. Follow up."',
+    'Bad (ICD code leakage): "Personal history of sigmoid colon cancer (Z85.038)" — write instead: "Personal history of sigmoid colon adenocarcinoma, status post curative resection."',
+    'Bad (ICD code leakage): "1. Essential hypertension (I10), well-controlled." — write instead: "1. Essential hypertension, well-controlled on current regimen."',
+    'Bad (description copying): "The patient has essential primary hypertension, which is characterized by elevated blood pressure."',
+    'Bad (flat plan): "Plan: Address diabetes. Address hypertension. Follow up."',
 ]
 
 
@@ -68,6 +70,17 @@ def build_generation_prompt_spec(
   <lexical_discipline>
     {"".join(f"<rule>{rule}</rule>" for rule in ANTI_COPY_RULES)}
   </lexical_discipline>
+  <required_structure>
+    <rule>The note MUST contain all of the following clearly labeled sections, in order. Missing any section is a hard failure.</rule>
+    <section>Chief Complaint (or CC:)</section>
+    <section>History of Present Illness (or HPI:)</section>
+    <section>Past Medical History (or PMH:)</section>
+    <section>Medications</section>
+    <section>Allergies</section>
+    <section>Physical Examination (or Physical Exam:)</section>
+    <section>Assessment</section>
+    <section>Plan</section>
+  </required_structure>
   <assessment_plan_linkage>
     <rule>Every seeded active condition must be addressed in the Assessment and/or Plan.</rule>
   </assessment_plan_linkage>
@@ -123,7 +136,8 @@ def build_generation_prompt_spec(
   <step order="2">Identify evidence types that would realistically support each active condition in this encounter.</step>
   <step order="3">Draft the note with evidence-forward narrative and realistic workflow structure.</step>
   <step order="4">Verify that every seeded condition appears in Assessment and/or Plan with realistic management language.</step>
-  <step order="5">Check for code leakage, label expansion, ontology prose, and specificity drift before returning JSON.</step>
+  <step order="5">Confirm all required structural sections are present with clear headings: Chief Complaint, HPI, Past Medical History, Medications, Allergies, Physical Examination, Assessment, Plan.</step>
+  <step order="6">Check for ICD code leakage, label expansion, ontology prose, and specificity drift before returning JSON.</step>
 </generation_instructions>
 """.strip()
 
@@ -159,6 +173,10 @@ def build_revision_prompt_spec(
   <frozen_element>Laterality, encounter stage, temporal state, and patient identity</frozen_element>
   <frozen_element>Major clinical scenario and all non-deficient content</frozen_element>
 </revision_freeze_rules>
+
+<lexical_discipline>
+  {"".join(f"<rule>{rule}</rule>" for rule in ANTI_COPY_RULES)}
+</lexical_discipline>
 
 <revision_scope_rules>
   <rule>Apply only the requested revision targets.</rule>
@@ -197,6 +215,9 @@ def build_revision_prompt_spec(
   <prohibited_implications>
 {_indent_block(_build_prohibited_implication_summary(bundle_semantic_constraints), 4)}
   </prohibited_implications>
+  <trap_patterns>
+{_indent_block(_build_trap_pattern_guidance(bundle_semantic_constraints), 4)}
+  </trap_patterns>
 </frozen_case_bundle>
 
 <previous_note>
@@ -208,9 +229,9 @@ def build_revision_prompt_spec(
 </revision_targets>
 
 <revision_instructions>
-  <step order="1">Memorize the frozen case bundle before modifying the note.</step>
+  <step order="1">Memorize the frozen case bundle, prohibited implications, and trap patterns before modifying the note.</step>
   <step order="2">Process each revision target in order.</step>
-  <step order="3">Verify that no frozen element changed and no new deficiency was introduced.</step>
+  <step order="3">Verify that no frozen element changed, no trap pattern was violated, and no new deficiency was introduced.</step>
   <step order="4">Return the complete revised note as JSON only.</step>
 </revision_instructions>
 

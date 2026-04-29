@@ -8,6 +8,9 @@ from clinical_note_generation_v3.core.models.constraints import (
     ClinicalBundleSemanticConstraints,
     ConstraintViolationSeverity,
 )
+from clinical_note_generation_v3.core.models.icd_adjudication import (
+    FinalIcdCodeAdjudicationOutcome,
+)
 from clinical_note_generation_v3.core.models.evaluation import (
     ConditionSupportVerificationOutcome,
     DeterministicPreCheckOutcome,
@@ -42,6 +45,7 @@ class NoteQualityDecisionCombiner:
         condition_support_verification_outcome: ConditionSupportVerificationOutcome,
         general_quality_rubric_scores: NoteGeneralQualityRubricScores | None,
         icd_constraint_alignment_scores: IcdConstraintAlignmentRubricScores | None,
+        icd_adjudication_outcome: FinalIcdCodeAdjudicationOutcome | None = None,
         icd_constraint_violations: list[IcdConstraintViolationDetail] | None = None,
         rubric_judge_prompt_id: str | None = None,
         rubric_judge_prompt_version: str | None = None,
@@ -49,12 +53,32 @@ class NoteQualityDecisionCombiner:
         icd_constraint_violations = icd_constraint_violations or []
 
         if not deterministic_precheck_outcome.passed():
+            recoverable, unrecoverable = _partition_precheck_failures(
+                deterministic_precheck_outcome.failure_reasons
+            )
+            if recoverable and not unrecoverable:
+                # Only missing-sections: allow one revision attempt with a structural scaffold.
+                return NoteEvaluationCritiqueResult(
+                    deterministic_precheck_outcome=deterministic_precheck_outcome,
+                    condition_support_verification_outcome=None,
+                    general_quality_rubric_scores=None,
+                    icd_constraint_alignment_scores=None,
+                    icd_constraint_violations=[],
+                    icd_adjudication_outcome=None,
+                    hard_fail_reasons=[],
+                    revision_targets=_build_structural_revision_targets(recoverable),
+                    combined_score=None,
+                    final_decision="revise",
+                    rubric_judge_prompt_id=rubric_judge_prompt_id,
+                    rubric_judge_prompt_version=rubric_judge_prompt_version,
+                )
             return NoteEvaluationCritiqueResult(
                 deterministic_precheck_outcome=deterministic_precheck_outcome,
                 condition_support_verification_outcome=None,
                 general_quality_rubric_scores=None,
                 icd_constraint_alignment_scores=None,
                 icd_constraint_violations=[],
+                icd_adjudication_outcome=None,
                 hard_fail_reasons=list(deterministic_precheck_outcome.failure_reasons),
                 revision_targets=[],
                 combined_score=None,
@@ -70,6 +94,7 @@ class NoteQualityDecisionCombiner:
                 general_quality_rubric_scores=general_quality_rubric_scores,
                 icd_constraint_alignment_scores=icd_constraint_alignment_scores,
                 icd_constraint_violations=icd_constraint_violations,
+                icd_adjudication_outcome=icd_adjudication_outcome,
                 hard_fail_reasons=["Rubric judging did not produce complete results."],
                 revision_targets=["Re-run rubric evaluation with a complete structured output."],
                 combined_score=None,
@@ -106,11 +131,22 @@ class NoteQualityDecisionCombiner:
         if not condition_support_verification_outcome.passed():
             hard_fail_reasons.append("Condition support verification failed.")
 
+        icd_adjudication_passed = bool(
+            icd_adjudication_outcome is not None and icd_adjudication_outcome.passed()
+        )
+        if not icd_adjudication_passed:
+            revision_targets.extend(
+                _build_icd_adjudication_revision_targets(icd_adjudication_outcome)
+            )
+
         final_decision = self._select_final_decision(
             combined_score=combined_score,
             hard_fail_reasons=hard_fail_reasons,
             revision_targets=revision_targets,
+            icd_adjudication_passed=icd_adjudication_passed,
         )
+        if final_decision == "reject" and not icd_adjudication_passed:
+            hard_fail_reasons.append("Final ICD-10-CM adjudication failed.")
 
         return NoteEvaluationCritiqueResult(
             deterministic_precheck_outcome=deterministic_precheck_outcome,
@@ -118,6 +154,7 @@ class NoteQualityDecisionCombiner:
             general_quality_rubric_scores=general_quality_rubric_scores,
             icd_constraint_alignment_scores=icd_constraint_alignment_scores,
             icd_constraint_violations=icd_constraint_violations,
+            icd_adjudication_outcome=icd_adjudication_outcome,
             hard_fail_reasons=hard_fail_reasons,
             revision_targets=revision_targets,
             combined_score=combined_score,
@@ -182,8 +219,14 @@ class NoteQualityDecisionCombiner:
         combined_score: float,
         hard_fail_reasons: list[str],
         revision_targets: list[str],
+        icd_adjudication_passed: bool = True,
     ) -> str:
         if hard_fail_reasons:
+            return "reject"
+
+        if not icd_adjudication_passed:
+            if combined_score >= self._revise_threshold and revision_targets:
+                return "revise"
             return "reject"
 
         if combined_score >= self._accept_threshold:
@@ -191,3 +234,53 @@ class NoteQualityDecisionCombiner:
         if combined_score >= self._revise_threshold:
             return "revise"
         return "reject"
+
+
+def _build_icd_adjudication_revision_targets(
+    icd_adjudication_outcome: FinalIcdCodeAdjudicationOutcome | None,
+) -> list[str]:
+    if icd_adjudication_outcome is None:
+        return ["Run final ICD-10-CM adjudication before accepting this note."]
+    return list(icd_adjudication_outcome.revision_targets)
+
+
+_RECOVERABLE_PRECHECK_PREFIXES: tuple[str, ...] = (
+    "Clinical note is missing required structural sections",
+)
+
+
+def _partition_precheck_failures(
+    failure_reasons: list[str],
+) -> tuple[list[str], list[str]]:
+    """
+    Split deterministic pre-check failure reasons into recoverable and unrecoverable.
+
+    Recoverable failures (missing structural sections) are formatting defects that a
+    single targeted revision can fix.  All other failures — ICD code leakage, note too
+    short, near-duplicate, repeated boilerplate — are unrecoverable: a re-prompt of the
+    same model against the same bundle is unlikely to produce a fundamentally different
+    result, and allowing revision would waste API calls.
+    """
+    recoverable: list[str] = []
+    unrecoverable: list[str] = []
+    for reason in failure_reasons:
+        if any(reason.startswith(prefix) for prefix in _RECOVERABLE_PRECHECK_PREFIXES):
+            recoverable.append(reason)
+        else:
+            unrecoverable.append(reason)
+    return recoverable, unrecoverable
+
+
+def _build_structural_revision_targets(recoverable_reasons: list[str]) -> list[str]:
+    """
+    Convert recoverable structural failure reasons into concrete revision targets
+    that include an explicit section scaffold for the model to follow.
+    """
+    targets = list(recoverable_reasons)
+    targets.append(
+        "Rewrite the note ensuring all required sections are present with clear headings: "
+        "Chief Complaint, History of Present Illness (HPI), Past Medical History (PMH), "
+        "Medications, Allergies, Physical Examination, Assessment, Plan. "
+        "Each section must begin on its own line with a labeled heading."
+    )
+    return targets
