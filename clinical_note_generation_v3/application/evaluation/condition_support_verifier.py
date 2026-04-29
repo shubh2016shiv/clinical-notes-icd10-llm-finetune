@@ -7,6 +7,9 @@ conditions and whether it drifts into unsupported additional diagnoses.
 
 from __future__ import annotations
 
+from typing import cast
+from typing import Literal
+
 from clinical_note_generation_v3.core.models.constraints import (
     ClinicalBundleSemanticConstraints,
 )
@@ -19,6 +22,8 @@ from clinical_note_generation_v3.prompt_specs.registry import (
     build_condition_support_verifier_prompt_spec,
 )
 from clinical_note_generation_v3.prompt_specs.rendering import compose_chat_prompt
+
+SupportOutcomeLiteral = Literal["pass", "fail"]
 
 
 class ConditionSupportVerifier:
@@ -51,9 +56,13 @@ class ConditionSupportVerifier:
             verification_prompt,
             response_schema=prompt_spec.response_schema,
         )
+        outcome_value = str(verification_response.get("outcome", "fail")).strip().lower()
 
         return ConditionSupportVerificationOutcome(
-            outcome=str(verification_response.get("outcome", "fail")),
+            outcome=cast(
+                SupportOutcomeLiteral,
+                outcome_value if outcome_value in {"pass", "fail"} else "fail",
+            ),
             under_supported_conditions=list(
                 verification_response.get("under_supported_conditions", [])
             ),
@@ -66,6 +75,13 @@ class ConditionSupportVerifier:
             verifier_notes=str(verification_response.get("verifier_notes", "")),
             verifier_prompt_id=prompt_spec.prompt_id,
             verifier_prompt_version=prompt_spec.prompt_version,
+        )
+
+    @property
+    def configured_model_label(self) -> str:
+        return (
+            f"{self._llm_json_generation_client.provider_name}/"
+            f"{self._llm_json_generation_client.model_name}"
         )
 
     @classmethod

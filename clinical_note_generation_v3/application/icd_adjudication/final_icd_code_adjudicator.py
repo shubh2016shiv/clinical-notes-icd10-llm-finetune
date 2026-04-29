@@ -124,6 +124,10 @@ class FinalIcdCodeAdjudicator:
             adjudicator_prompt_version=prompt_version,
         )
 
+    @property
+    def configured_model_label(self) -> str:
+        return self._clinical_diagnosis_extractor.configured_model_label
+
 
 def _add_adjudication_consistency_issues(
     *,

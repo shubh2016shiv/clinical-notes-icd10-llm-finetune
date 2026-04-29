@@ -12,6 +12,8 @@ Dependency chain (no circular imports):
   bundle.py -> constraints.py -> note.py
 """
 
+from uuid import uuid4
+
 from pydantic import BaseModel, Field
 
 from .bundle import SeededClinicalBundle
@@ -75,6 +77,7 @@ class GeneratedClinicalNote(BaseModel):
         The fictitious DOB injected as PHI, e.g. '1962-03-15'.
     """
 
+    correlation_id: str = Field(default_factory=lambda: str(uuid4()))
     note_text: str
     generation_prompt_id: str
     generation_prompt_version: str

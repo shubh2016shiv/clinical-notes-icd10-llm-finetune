@@ -15,6 +15,7 @@ from clinical_note_generation_v3.core.models.constraints import (
     ClinicalBundleSemanticConstraints,
 )
 from clinical_note_generation_v3.core.models.evaluation import (
+    DeterministicCheckFailure,
     DeterministicPreCheckOutcome,
 )
 from clinical_note_generation_v3.core.models.note import GeneratedClinicalNote
@@ -66,54 +67,137 @@ class DeterministicPreCheckRunner:
         """
         note_text = generated_clinical_note.note_text
         failure_reasons: list[str] = []
+        failed_checks: list[DeterministicCheckFailure] = []
 
         minimum_length_failure_reason = self._check_minimum_note_length(note_text)
         if minimum_length_failure_reason:
             failure_reasons.append(minimum_length_failure_reason)
+            failed_checks.append(
+                DeterministicCheckFailure(
+                    check_name="minimum_note_length",
+                    message=minimum_length_failure_reason,
+                    evidence={
+                        "actual_character_count": len(note_text.strip()),
+                        "minimum_required_character_count": self._minimum_note_character_count,
+                    },
+                    recoverable=False,
+                )
+            )
 
-        icd_code_leakage_failure_reason = self._check_for_icd_code_leakage(note_text)
+        icd_code_leakage_failure_reason, leaked_icd_code = self._check_for_icd_code_leakage(
+            note_text
+        )
         if icd_code_leakage_failure_reason:
             failure_reasons.append(icd_code_leakage_failure_reason)
+            failed_checks.append(
+                DeterministicCheckFailure(
+                    check_name="literal_icd_code_leakage",
+                    message=icd_code_leakage_failure_reason,
+                    evidence={"matched_icd_code": leaked_icd_code},
+                    recoverable=False,
+                )
+            )
 
-        required_section_failure_reason = self._check_required_note_sections(note_text)
+        required_section_failure_reason, missing_sections = self._check_required_note_sections(
+            note_text
+        )
         if required_section_failure_reason:
             failure_reasons.append(required_section_failure_reason)
+            failed_checks.append(
+                DeterministicCheckFailure(
+                    check_name="required_note_sections",
+                    message=required_section_failure_reason,
+                    evidence={"missing_sections": missing_sections},
+                    recoverable=True,
+                )
+            )
 
-        repeated_boilerplate_failure_reason = self._check_for_repeated_boilerplate(note_text)
+        repeated_boilerplate_failure_reason, repeated_lines = self._check_for_repeated_boilerplate(
+            note_text
+        )
         if repeated_boilerplate_failure_reason:
             failure_reasons.append(repeated_boilerplate_failure_reason)
+            failed_checks.append(
+                DeterministicCheckFailure(
+                    check_name="repeated_boilerplate",
+                    message=repeated_boilerplate_failure_reason,
+                    evidence={"sample_repeated_lines": repeated_lines[:3]},
+                    recoverable=False,
+                )
+            )
 
-        copied_description_failure_reason = self._check_for_overly_literal_icd_description_copying(
+        (
+            copied_description_failure_reason,
+            copied_description,
+        ) = self._check_for_overly_literal_icd_description_copying(
             note_text=note_text,
             bundle_semantic_constraints=bundle_semantic_constraints,
         )
         if copied_description_failure_reason:
             failure_reasons.append(copied_description_failure_reason)
+            failed_checks.append(
+                DeterministicCheckFailure(
+                    check_name="literal_icd_description_copying",
+                    message=copied_description_failure_reason,
+                    evidence={"copied_icd_short_description": copied_description},
+                    recoverable=True,
+                )
+            )
 
         if candidate_note_embedding is not None and recent_accepted_note_embeddings:
-            cosine_near_duplicate_reason = self._check_for_near_duplicate_by_cosine_similarity(
+            (
+                cosine_near_duplicate_reason,
+                highest_cosine_similarity,
+            ) = self._check_for_near_duplicate_by_cosine_similarity(
                 candidate_note_embedding=candidate_note_embedding,
                 recent_accepted_note_embeddings=recent_accepted_note_embeddings,
             )
             if cosine_near_duplicate_reason:
                 failure_reasons.append(cosine_near_duplicate_reason)
+                failed_checks.append(
+                    DeterministicCheckFailure(
+                        check_name="cosine_near_duplicate",
+                        message=cosine_near_duplicate_reason,
+                        evidence={
+                            "cosine_similarity": highest_cosine_similarity,
+                            "threshold": self._near_duplicate_similarity_threshold,
+                        },
+                        recoverable=False,
+                    )
+                )
 
-        jaccard_near_duplicate_reason = self._check_for_near_duplicate_by_jaccard(
+        (
+            jaccard_near_duplicate_reason,
+            highest_jaccard_similarity,
+        ) = self._check_for_near_duplicate_by_jaccard(
             note_text=note_text,
             recent_accepted_note_texts=recent_accepted_note_texts or [],
         )
         if jaccard_near_duplicate_reason:
             failure_reasons.append(jaccard_near_duplicate_reason)
+            failed_checks.append(
+                DeterministicCheckFailure(
+                    check_name="jaccard_near_duplicate",
+                    message=jaccard_near_duplicate_reason,
+                    evidence={
+                        "jaccard_similarity": highest_jaccard_similarity,
+                        "threshold": self._near_duplicate_similarity_threshold,
+                    },
+                    recoverable=False,
+                )
+            )
 
         if failure_reasons:
             return DeterministicPreCheckOutcome(
                 outcome="hard_fail",
                 failure_reasons=failure_reasons,
+                failed_checks=failed_checks,
             )
 
         return DeterministicPreCheckOutcome(
             outcome="pass",
             failure_reasons=[],
+            failed_checks=[],
         )
 
     def _check_minimum_note_length(self, note_text: str) -> str | None:
@@ -124,16 +208,17 @@ class DeterministicPreCheckRunner:
             )
         return None
 
-    def _check_for_icd_code_leakage(self, note_text: str) -> str | None:
+    def _check_for_icd_code_leakage(self, note_text: str) -> tuple[str | None, str | None]:
         leaked_icd_code_match = _GENERIC_ICD_CODE_PATTERN.search(note_text)
         if leaked_icd_code_match:
             return (
                 f"Clinical note contains a literal ICD code string: "
-                f"{leaked_icd_code_match.group(0)}."
+                f"{leaked_icd_code_match.group(0)}.",
+                leaked_icd_code_match.group(0),
             )
-        return None
+        return None, None
 
-    def _check_required_note_sections(self, note_text: str) -> str | None:
+    def _check_required_note_sections(self, note_text: str) -> tuple[str | None, list[str]]:
         normalized_note_text = note_text.lower()
 
         has_assessment_section = "assessment" in normalized_note_text
@@ -157,10 +242,10 @@ class DeterministicPreCheckRunner:
                 "Clinical note is missing required structural sections: "
                 + ", ".join(missing_sections)
                 + "."
-            )
-        return None
+            ), missing_sections
+        return None, []
 
-    def _check_for_repeated_boilerplate(self, note_text: str) -> str | None:
+    def _check_for_repeated_boilerplate(self, note_text: str) -> tuple[str | None, list[str]]:
         normalized_lines = [line.strip().lower() for line in note_text.splitlines() if line.strip()]
         repeated_line_counts = Counter(normalized_lines)
 
@@ -175,8 +260,8 @@ class DeterministicPreCheckRunner:
                 "Clinical note overuses repeated boilerplate lines, including: "
                 + "; ".join(overly_repeated_lines[:3])
                 + "."
-            )
-        return None
+            ), overly_repeated_lines
+        return None, []
 
     _ASSESSMENT_HEADERS = frozenset(
         {
@@ -207,7 +292,7 @@ class DeterministicPreCheckRunner:
         *,
         note_text: str,
         bundle_semantic_constraints: ClinicalBundleSemanticConstraints,
-    ) -> str | None:
+    ) -> tuple[str | None, str | None]:
         note_lower = note_text.lower()
 
         for (
@@ -223,10 +308,11 @@ class DeterministicPreCheckRunner:
                 continue
             return (
                 "Clinical note appears to copy an official ICD description too literally: "
-                f"'{code_semantic_constraints.icd_short_description}'."
+                f"'{code_semantic_constraints.icd_short_description}'.",
+                code_semantic_constraints.icd_short_description,
             )
 
-        return None
+        return None, None
 
     def _icd_description_is_in_assessment_section(self, note_lower: str, match_pos: int) -> bool:
         preceding = note_lower[:match_pos]
@@ -247,7 +333,7 @@ class DeterministicPreCheckRunner:
         *,
         candidate_note_embedding: list[float],
         recent_accepted_note_embeddings: list[list[float]],
-    ) -> str | None:
+    ) -> tuple[str | None, float | None]:
         """
         Primary semantic near-duplicate gate.
 
@@ -264,16 +350,17 @@ class DeterministicPreCheckRunner:
             return (
                 "Clinical note is semantically too similar to a recently accepted note "
                 f"(cosine_similarity={highest_cosine_similarity:.3f}, "
-                f"threshold={self._near_duplicate_similarity_threshold:.3f})."
+                f"threshold={self._near_duplicate_similarity_threshold:.3f}).",
+                highest_cosine_similarity,
             )
-        return None
+        return None, highest_cosine_similarity
 
     def _check_for_near_duplicate_by_jaccard(
         self,
         *,
         note_text: str,
         recent_accepted_note_texts: list[str],
-    ) -> str | None:
+    ) -> tuple[str | None, float | None]:
         """
         Secondary lexical near-duplicate gate.
 
@@ -283,11 +370,11 @@ class DeterministicPreCheckRunner:
         gate whenever embeddings are available.
         """
         if not recent_accepted_note_texts:
-            return None
+            return None, None
 
         candidate_note_tokens = self._normalize_note_text_to_token_set(note_text)
         if not candidate_note_tokens:
-            return None
+            return None, None
 
         highest_jaccard_similarity = 0.0
         for recent_accepted_note_text in recent_accepted_note_texts:
@@ -306,9 +393,10 @@ class DeterministicPreCheckRunner:
             return (
                 "Clinical note is lexically too similar to a recently accepted note "
                 f"(jaccard_similarity={highest_jaccard_similarity:.3f}, "
-                f"threshold={self._near_duplicate_similarity_threshold:.3f})."
+                f"threshold={self._near_duplicate_similarity_threshold:.3f}).",
+                highest_jaccard_similarity,
             )
-        return None
+        return None, highest_jaccard_similarity
 
     def _normalize_note_text_to_token_set(self, note_text: str) -> set[str]:
         return {token for token in re.findall(r"[a-z0-9]+", note_text.lower()) if len(token) > 2}

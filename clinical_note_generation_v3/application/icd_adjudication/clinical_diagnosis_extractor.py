@@ -4,6 +4,8 @@ LLM-assisted diagnosis extraction for final ICD adjudication.
 
 from __future__ import annotations
 
+from typing import cast
+
 from clinical_note_generation_v3.core.models.constraints import ClinicalBundleSemanticConstraints
 from clinical_note_generation_v3.core.models.icd_adjudication import (
     ClinicalDiagnosisMention,
@@ -53,6 +55,13 @@ class ClinicalDiagnosisExtractor:
         rationale = str(response.get("extraction_rationale", ""))
         return mentions, rationale, prompt_spec.prompt_id, prompt_spec.prompt_version
 
+    @property
+    def configured_model_label(self) -> str:
+        return (
+            f"{self._llm_json_generation_client.provider_name}/"
+            f"{self._llm_json_generation_client.model_name}"
+        )
+
     @classmethod
     def from_default_settings(cls) -> "ClinicalDiagnosisExtractor":
         from clinical_note_generation_v3.infrastructure.llm_provider.llm_client_factory import (
@@ -64,7 +73,10 @@ class ClinicalDiagnosisExtractor:
 
 def _build_diagnosis_mention(payload: dict) -> ClinicalDiagnosisMention:
     raw_status = str(payload.get("status", "incidental")).strip().lower()
-    status = raw_status if raw_status in _ALLOWED_STATUSES else "incidental"
+    status = cast(
+        DiagnosisMentionStatus,
+        raw_status if raw_status in _ALLOWED_STATUSES else "incidental",
+    )
     # Trust the LLM's should_code judgment directly.  Z-category personal-history
     # and surveillance codes (e.g. Z85.x) have status="historical" yet ARE the
     # correct billable code for the encounter — the old `and status == "active"`

@@ -10,6 +10,9 @@ from collections.abc import Callable
 from clinical_note_generation_v3.application.note_generation.seeded_clinical_note_generator import (
     SeededClinicalNoteGenerator,
 )
+from clinical_note_generation_v3.application.reporting.console_progress_reporter import (
+    ConsoleProgressReporter,
+)
 from clinical_note_generation_v3.core.models.constraints import ClinicalBundleSemanticConstraints
 from clinical_note_generation_v3.core.models.evaluation import (
     AcceptedClinicalNoteResult,
@@ -139,8 +142,17 @@ class ClinicalNoteRevisionLoop:
         evaluate_generated_clinical_note: Callable[
             [GeneratedClinicalNote], NoteEvaluationCritiqueResult
         ],
+        progress_reporter: ConsoleProgressReporter | None = None,
     ) -> AcceptedClinicalNoteResult | RejectedClinicalNoteResult:
         revision_history: list[RevisionAttemptRecord] = []
+
+        if progress_reporter is not None:
+            if initial_note_evaluation_result.final_decision == "accept":
+                progress_reporter.detail("No revision was needed after the first evaluation.")
+            elif initial_note_evaluation_result.final_decision == "reject":
+                progress_reporter.detail(
+                    "The note is not eligible for revision and will be rejected."
+                )
 
         if initial_note_evaluation_result.final_decision == "accept":
             return _build_accepted_result(
@@ -159,12 +171,19 @@ class ClinicalNoteRevisionLoop:
             if current_note_evaluation_result.final_decision != "revise":
                 break
 
+            if progress_reporter is not None:
+                progress_reporter.detail(
+                    f"Revision attempt {revision_attempt_number}/{self._max_revision_attempts}: "
+                    "regenerating the clinical note using the requested fixes."
+                )
+
             revised_clinical_note = self._seeded_clinical_note_generator.generate_revised_clinical_note(
                 bundle_semantic_constraints=bundle_semantic_constraints,
                 previous_generated_clinical_note=current_generated_clinical_note,
                 revision_targets=current_note_evaluation_result.revision_targets,
                 metadata_constraint_violations=current_note_evaluation_result.icd_constraint_violations,
                 generation_attempt_number=revision_attempt_number + 1,
+                correlation_id=current_generated_clinical_note.correlation_id,
             )
 
             post_revision_drift_violations = self._detect_post_revision_drift(
@@ -173,6 +192,10 @@ class ClinicalNoteRevisionLoop:
                 revised_clinical_note=revised_clinical_note,
             )
             if post_revision_drift_violations:
+                if progress_reporter is not None:
+                    progress_reporter.detail(
+                        "The revised note changed fixed case facts and cannot continue."
+                    )
                 revised_note_evaluation_result = NoteEvaluationCritiqueResult(
                     deterministic_precheck_outcome=current_note_evaluation_result.deterministic_precheck_outcome,
                     condition_support_verification_outcome=current_note_evaluation_result.condition_support_verification_outcome,
@@ -186,6 +209,11 @@ class ClinicalNoteRevisionLoop:
                     final_decision="reject",
                 )
             else:
+                if progress_reporter is not None:
+                    progress_reporter.detail(
+                        f"Revision attempt {revision_attempt_number}/{self._max_revision_attempts}: "
+                        "re-checking the updated note."
+                    )
                 revised_note_evaluation_result = evaluate_generated_clinical_note(
                     revised_clinical_note
                 )
@@ -208,6 +236,11 @@ class ClinicalNoteRevisionLoop:
             current_note_evaluation_result = revised_note_evaluation_result
 
             if current_note_evaluation_result.final_decision == "accept":
+                if progress_reporter is not None:
+                    progress_reporter.detail(
+                        f"Revision attempt {revision_attempt_number}/{self._max_revision_attempts}: "
+                        "the updated note now passes review."
+                    )
                 return _build_accepted_result(
                     seeded_bundle=bundle_semantic_constraints.seeded_bundle,
                     bundle_note_writing_constraints=bundle_semantic_constraints,
@@ -215,6 +248,11 @@ class ClinicalNoteRevisionLoop:
                     final_critique=current_note_evaluation_result,
                     revision_history=revision_history,
                     required_revision=True,
+                )
+            if progress_reporter is not None:
+                progress_reporter.detail(
+                    f"Revision attempt {revision_attempt_number}/{self._max_revision_attempts}: "
+                    f"follow-up decision is {current_note_evaluation_result.final_decision}."
                 )
 
         return _build_rejected_result(
@@ -319,6 +357,7 @@ def _build_accepted_result(
 ) -> AcceptedClinicalNoteResult:
     adjudication_outcome = final_critique.icd_adjudication_outcome
     return AcceptedClinicalNoteResult(
+        correlation_id=accepted_note.correlation_id,
         seeded_bundle=seeded_bundle,
         bundle_note_writing_constraints=bundle_note_writing_constraints,
         accepted_note=accepted_note,
@@ -349,6 +388,7 @@ def _build_rejected_result(
 ) -> RejectedClinicalNoteResult:
     adjudication_outcome = final_critique.icd_adjudication_outcome
     return RejectedClinicalNoteResult(
+        correlation_id=rejected_note.correlation_id,
         seeded_bundle=seeded_bundle,
         rejected_note=rejected_note,
         final_critique=final_critique,

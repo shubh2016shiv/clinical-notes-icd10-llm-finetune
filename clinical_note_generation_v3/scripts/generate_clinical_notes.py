@@ -29,11 +29,34 @@ from clinical_note_generation_v3.application.pipeline import (  # noqa: E402
     create_default_clinical_note_quality_pipeline,
 )
 from clinical_note_generation_v3.config.settings import V3PipelineSettings  # noqa: E402
+from clinical_note_generation_v3.core.log import configure_structured_logging  # noqa: E402
+from clinical_note_generation_v3.core.models.evaluation import (  # noqa: E402
+    AcceptedClinicalNoteResult,
+    RejectedClinicalNoteResult,
+)
+
+
+def configure_v3_cli_logging(*, log_verbosity: bool) -> None:
+    """
+    Keep intentional pipeline logs visible while suppressing noisy HTTP transport logs.
+    """
+    logging.basicConfig(level=logging.INFO, format="%(levelname)s: %(message)s")
+    configure_structured_logging(enabled=log_verbosity, log_level=logging.INFO)
+    for logger_name in [
+        "httpx",
+        "httpcore",
+        "openai",
+        "openai._base_client",
+        "openai._client",
+        "urllib3",
+        "google",
+        "google.generativeai",
+    ]:
+        logging.getLogger(logger_name).setLevel(logging.WARNING)
 
 
 def main() -> int:
     """Generate clinical notes using the v3 pipeline."""
-    logging.basicConfig(level=logging.INFO, format="%(levelname)s: %(message)s")
     parser = argparse.ArgumentParser(
         description="Generate clinical notes using the v3 seeded clinical note quality pipeline."
     )
@@ -49,7 +72,7 @@ def main() -> int:
         "-o",
         type=Path,
         default=None,
-        help="Output directory for generated notes (default: settings sample_data_directory)",
+        help="Output directory for generated notes (default: settings generated clinical notes directory)",
     )
     parser.add_argument(
         "--no-artifacts",
@@ -60,6 +83,7 @@ def main() -> int:
 
     # Load settings
     settings = V3PipelineSettings()
+    configure_v3_cli_logging(log_verbosity=settings.log_verbosity)
 
     # Determine output directory
     output_dir = args.output_dir or settings.sample_data_directory
@@ -83,6 +107,7 @@ def main() -> int:
     results, metrics = pipeline.run_batch_generation_pipeline(
         requested_example_count=args.count,
         write_artifacts=not args.no_artifacts,
+        show_progress=True,
     )
     end_time = datetime.now()
     duration = (end_time - start_time).total_seconds()
@@ -119,7 +144,7 @@ def main() -> int:
 
     # Print details for each note
     for i, result in enumerate(results, 1):
-        if result.__class__.__name__ == "AcceptedClinicalNoteResult":
+        if isinstance(result, AcceptedClinicalNoteResult):
             print(f"\nNote {i} [ACCEPTED]")
             print(f"  Archetype: {result.seeded_bundle.archetype}")
             print(f"  Template ID: {result.seeded_bundle.template_id}")
@@ -159,8 +184,9 @@ def main() -> int:
         }
 
         for result in results:
-            if result.__class__.__name__ == "AcceptedClinicalNoteResult":
+            if isinstance(result, AcceptedClinicalNoteResult):
                 note_data = {
+                    "correlation_id": result.correlation_id,
                     "status": "accepted",
                     "archetype": result.seeded_bundle.archetype,
                     "template_id": result.seeded_bundle.template_id,
@@ -187,9 +213,11 @@ def main() -> int:
                     "patient_name": result.accepted_note.fake_patient_name,
                     "patient_mrn": result.accepted_note.fake_patient_mrn,
                     "patient_dob": result.accepted_note.fake_patient_date_of_birth,
+                    "pipeline_trace": result.pipeline_trace,
                 }
-            else:
+            elif isinstance(result, RejectedClinicalNoteResult):
                 note_data = {
+                    "correlation_id": result.correlation_id,
                     "status": "rejected",
                     "primary_rejection_reason": result.primary_rejection_reason,
                     "all_rejection_reasons": result.all_rejection_reasons,
@@ -205,7 +233,10 @@ def main() -> int:
                         if result.code_set_validation_outcome
                         else None
                     ),
+                    "pipeline_trace": result.pipeline_trace,
                 }
+            else:
+                continue
             results_data["notes"].append(note_data)
 
         with open(results_file, "w") as f:

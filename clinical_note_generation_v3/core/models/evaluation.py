@@ -32,6 +32,7 @@ Dependency chain (no circular imports):
 
 from __future__ import annotations
 
+from typing import Any
 from typing import Literal
 
 from pydantic import BaseModel, Field
@@ -76,9 +77,21 @@ class DeterministicPreCheckOutcome(BaseModel):
 
     outcome: Literal["pass", "hard_fail"]
     failure_reasons: list[str] = Field(default_factory=list)
+    failed_checks: list["DeterministicCheckFailure"] = Field(default_factory=list)
 
     def passed(self) -> bool:
         return self.outcome == "pass"
+
+
+class DeterministicCheckFailure(BaseModel):
+    """
+    Structured detail for one failed deterministic quality gate.
+    """
+
+    check_name: str
+    message: str
+    evidence: dict[str, Any] = Field(default_factory=dict)
+    recoverable: bool = False
 
 
 # ===========================================================================
@@ -540,6 +553,7 @@ class AcceptedClinicalNoteResult(BaseModel):
         False when accepted on first generation, True otherwise.
     """
 
+    correlation_id: str | None = None
     seeded_bundle: SeededClinicalBundle
     bundle_note_writing_constraints: ClinicalBundleSemanticConstraints
     accepted_note: GeneratedClinicalNote
@@ -550,6 +564,7 @@ class AcceptedClinicalNoteResult(BaseModel):
     adjudication_provenance: FinalIcdCodeAdjudicationOutcome | None = None
     revision_history: list[RevisionAttemptRecord] = Field(default_factory=list)
     required_revision: bool = False
+    pipeline_trace: list[dict[str, Any]] = Field(default_factory=list)
 
 
 class RejectedClinicalNoteResult(BaseModel):
@@ -580,6 +595,7 @@ class RejectedClinicalNoteResult(BaseModel):
         Empty when rejected on first generation without revision.
     """
 
+    correlation_id: str | None = None
     seeded_bundle: SeededClinicalBundle
     rejected_note: GeneratedClinicalNote
     final_critique: NoteEvaluationCritiqueResult
@@ -590,6 +606,7 @@ class RejectedClinicalNoteResult(BaseModel):
     primary_rejection_reason: str
     all_rejection_reasons: list[str] = Field(default_factory=list)
     revision_history: list[RevisionAttemptRecord] = Field(default_factory=list)
+    pipeline_trace: list[dict[str, Any]] = Field(default_factory=list)
 
 
 # ===========================================================================

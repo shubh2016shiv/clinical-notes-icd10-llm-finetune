@@ -18,6 +18,9 @@ from clinical_note_generation_v3.application.constraint_extraction.constraint_ex
 from clinical_note_generation_v3.application.evaluation.clinical_note_revision_loop import (
     ClinicalNoteRevisionLoop,
 )
+from clinical_note_generation_v3.application.evaluation.icd_compliance_reasoning_reviewer import (
+    IcdComplianceReasoningReviewer,
+)
 from clinical_note_generation_v3.application.evaluation.clinical_note_rubric_judge import (
     ClinicalNoteRubricJudge,
 )
@@ -44,6 +47,9 @@ from clinical_note_generation_v3.artifacts.audit_artifact_writer import AuditArt
 from clinical_note_generation_v3.artifacts.batch_metrics_writer import BatchMetricsWriter
 from clinical_note_generation_v3.artifacts.training_artifact_writer import TrainingArtifactWriter
 from clinical_note_generation_v3.config.settings import V3PipelineSettings
+from clinical_note_generation_v3.persistence_clinical_notes_postgresql import (
+    create_postgresql_accepted_notes_persistence,
+)
 from clinical_note_generation_v3.core.services.deterministic_precheck_runner import (
     DeterministicPreCheckRunner,
 )
@@ -115,6 +121,14 @@ def create_default_clinical_note_quality_pipeline(
         seeded_clinical_note_generator=seeded_clinical_note_generator,
         max_revision_attempts=settings.max_revision_attempts,
     )
+    accepted_note_persistence = create_postgresql_accepted_notes_persistence(settings)
+
+    icd_compliance_reasoning_reviewer: IcdComplianceReasoningReviewer | None = None
+    if settings.icd_compliance_reviewer_enabled and settings.openai_api_key:
+        icd_compliance_reasoning_reviewer = IcdComplianceReasoningReviewer(
+            model_name=settings.icd_compliance_reviewer_reasoning_model,
+            api_key=settings.openai_api_key,
+        )
 
     return ClinicalNoteQualityPipeline(
         clinical_bundle_template_sampler=clinical_bundle_template_sampler,
@@ -139,6 +153,11 @@ def create_default_clinical_note_quality_pipeline(
         ),
         batch_metrics_output_path=(batch_metrics_output_path or settings.batch_metrics_output_path),
         recent_accepted_note_window_size=settings.recent_accepted_note_window_size,
+        accepted_note_persistence=accepted_note_persistence,
+        accept_threshold_generated_notes=settings.accept_threshold_generated_notes,
+        icd_compliance_reasoning_reviewer=icd_compliance_reasoning_reviewer,
+        icd_compliance_reviewer_max_regeneration_loops=settings.icd_compliance_reviewer_max_regeneration_loops,
+        log_verbosity=settings.log_verbosity,
     )
 
 

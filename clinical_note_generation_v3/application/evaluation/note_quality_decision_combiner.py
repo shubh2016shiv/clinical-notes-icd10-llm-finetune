@@ -4,6 +4,8 @@ Decision combiner for the clinical note evaluation stack.
 
 from __future__ import annotations
 
+from typing import Literal
+
 from clinical_note_generation_v3.core.models.constraints import (
     ClinicalBundleSemanticConstraints,
     ConstraintViolationSeverity,
@@ -57,7 +59,7 @@ class NoteQualityDecisionCombiner:
                 deterministic_precheck_outcome.failure_reasons
             )
             if recoverable and not unrecoverable:
-                # Only missing-sections: allow one revision attempt with a structural scaffold.
+                # Formatting and lexical defects can usually be fixed by a targeted rewrite.
                 return NoteEvaluationCritiqueResult(
                     deterministic_precheck_outcome=deterministic_precheck_outcome,
                     condition_support_verification_outcome=None,
@@ -66,7 +68,7 @@ class NoteQualityDecisionCombiner:
                     icd_constraint_violations=[],
                     icd_adjudication_outcome=None,
                     hard_fail_reasons=[],
-                    revision_targets=_build_structural_revision_targets(recoverable),
+                    revision_targets=_build_precheck_revision_targets(recoverable),
                     combined_score=None,
                     final_decision="revise",
                     rubric_judge_prompt_id=rubric_judge_prompt_id,
@@ -220,7 +222,7 @@ class NoteQualityDecisionCombiner:
         hard_fail_reasons: list[str],
         revision_targets: list[str],
         icd_adjudication_passed: bool = True,
-    ) -> str:
+    ) -> Literal["accept", "revise", "reject"]:
         if hard_fail_reasons:
             return "reject"
 
@@ -246,6 +248,7 @@ def _build_icd_adjudication_revision_targets(
 
 _RECOVERABLE_PRECHECK_PREFIXES: tuple[str, ...] = (
     "Clinical note is missing required structural sections",
+    "Clinical note appears to copy an official ICD description too literally",
 )
 
 
@@ -271,16 +274,28 @@ def _partition_precheck_failures(
     return recoverable, unrecoverable
 
 
-def _build_structural_revision_targets(recoverable_reasons: list[str]) -> list[str]:
+def _build_precheck_revision_targets(recoverable_reasons: list[str]) -> list[str]:
     """
-    Convert recoverable structural failure reasons into concrete revision targets
-    that include an explicit section scaffold for the model to follow.
+    Convert recoverable deterministic failures into concrete revision targets.
     """
     targets = list(recoverable_reasons)
-    targets.append(
-        "Rewrite the note ensuring all required sections are present with clear headings: "
-        "Chief Complaint, History of Present Illness (HPI), Past Medical History (PMH), "
-        "Medications, Allergies, Physical Examination, Assessment, Plan. "
-        "Each section must begin on its own line with a labeled heading."
-    )
+    if any(
+        reason.startswith("Clinical note is missing required structural sections")
+        for reason in recoverable_reasons
+    ):
+        targets.append(
+            "Rewrite the note ensuring all required sections are present with clear headings: "
+            "Chief Complaint, History of Present Illness (HPI), Past Medical History (PMH), "
+            "Medications, Allergies, Physical Examination, Assessment, Plan. "
+            "Each section must begin on its own line with a labeled heading."
+        )
+    if any(
+        reason.startswith("Clinical note appears to copy an official ICD description too literally")
+        for reason in recoverable_reasons
+    ):
+        targets.append(
+            "Rewrite diagnosis and problem-list wording so it does not copy official ICD-10-CM "
+            "short descriptions verbatim. Preserve the same clinical meaning, but use natural "
+            "clinician documentation and evidence-forward language instead of ontology wording."
+        )
     return targets

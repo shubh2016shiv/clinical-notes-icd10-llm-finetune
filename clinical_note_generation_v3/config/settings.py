@@ -19,7 +19,6 @@ from dotenv import dotenv_values
 from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
-
 PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
 
 
@@ -135,8 +134,8 @@ class V3PipelineSettings(BaseSettings):
         description="Embedding batch size used by the FAISS ICD index build CLI.",
     )
     sample_data_directory: Path = Field(
-        default=PROJECT_ROOT / "clinical_note_generation_v3" / "sample_data",
-        description="Tracked sample data and human-review artifacts.",
+        default=PROJECT_ROOT / "clinical_note_generation_v3" / "generated_clinical_notes",
+        description="Default output directory for generated clinical notes and review artifacts.",
     )
     raw_run_directory: Path = Field(
         default=PROJECT_ROOT / "clinical_note_generation_v3" / "runs",
@@ -228,6 +227,40 @@ class V3PipelineSettings(BaseSettings):
         le=1000,
         description="Rolling history size used for deterministic near-duplicate checks.",
     )
+    accept_threshold_generated_notes: float = Field(
+        default=0.98,
+        ge=0.0,
+        le=1.0,
+        description=(
+            "Accepted notes meeting or exceeding this combined score are eligible "
+            "for PostgreSQL persistence."
+        ),
+    )
+    log_verbosity: bool = Field(
+        default=True,
+        description=(
+            "Emit structured verbose pipeline logs with intermediate stage outputs "
+            "when True. When False, retain the existing console progress output only."
+        ),
+    )
+    postgresql_persistence_enabled: bool = Field(
+        default=False,
+        description="Enable PostgreSQL persistence for high-quality accepted notes.",
+    )
+    postgresql_dsn: str | None = Field(
+        default=None,
+        description="PostgreSQL DSN used for accepted-note persistence.",
+    )
+    postgresql_table_name: str = Field(
+        default="accepted_clinical_notes_v3",
+        description="Target PostgreSQL table for persisted accepted-note documents.",
+    )
+    postgresql_persistence_max_retries: int = Field(
+        default=3,
+        ge=1,
+        le=10,
+        description="Maximum PostgreSQL persistence attempts per accepted note.",
+    )
     gemini_api_key: str | None = Field(
         default_factory=lambda: read_secret_from_environment("GEMINI_API_KEY"),
         description="Gemini API key loaded from environment or .env at construction time.",
@@ -243,6 +276,33 @@ class V3PipelineSettings(BaseSettings):
             or read_secret_from_environment("DEEP_SEEK")
         ),
         description="DeepSeek API key loaded from environment or .env at construction time.",
+    )
+
+    # ICD-10 compliance reasoning reviewer (GPT-5 Nano)
+    icd_compliance_reviewer_enabled: bool = Field(
+        default=True,
+        description=(
+            "Enable the ICD-10 compliance reasoning reviewer. "
+            "When True, each generated note is reviewed by the reasoning model "
+            "before entering the main evaluation stack."
+        ),
+    )
+    icd_compliance_reviewer_reasoning_model: str = Field(
+        default="gpt-5-nano",
+        description=(
+            "OpenAI reasoning model used for ICD-10 compliance review. "
+            "Must be an OpenAI model accessible via the configured OPENAI_API_KEY."
+        ),
+    )
+    icd_compliance_reviewer_max_regeneration_loops: int = Field(
+        default=3,
+        ge=1,
+        le=5,
+        description=(
+            "Maximum note regeneration attempts driven by ICD-10 compliance reviewer fixes. "
+            "If the note is still non-compliant after this many loops the last version "
+            "proceeds to the main evaluation stack as-is."
+        ),
     )
 
     @property

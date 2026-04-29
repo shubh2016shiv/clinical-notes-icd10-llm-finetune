@@ -37,8 +37,19 @@ class JSONGenerationClient(Protocol):
         GeminiJSONClient or FallbackJSONClient directly.
     """
 
-    provider_name: str
-    model_name: str
+    @property
+    def provider_name(self) -> str:
+        """
+        Provider that serviced the most recent successful generation call.
+        """
+        ...
+
+    @property
+    def model_name(self) -> str:
+        """
+        Model that serviced the most recent successful generation call.
+        """
+        ...
 
     def generate_json(self, prompt: str, response_schema: dict | None = None) -> dict:
         """

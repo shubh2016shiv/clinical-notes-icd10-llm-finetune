@@ -44,8 +44,8 @@ class ClinicalNoteRubricJudge:
         bundle_semantic_constraints: ClinicalBundleSemanticConstraints,
         condition_support_verification_outcome: ConditionSupportVerificationOutcome,
     ) -> tuple[
-        NoteGeneralQualityRubricScores,
-        IcdConstraintAlignmentRubricScores,
+        NoteGeneralQualityRubricScores | None,
+        IcdConstraintAlignmentRubricScores | None,
         list[IcdConstraintViolationDetail],
         str,
         str,
@@ -217,6 +217,13 @@ class ClinicalNoteRubricJudge:
         if criterion_payload is None:
             return None
         return self._build_single_rubric_criterion(criterion_payload)
+
+    @property
+    def configured_model_label(self) -> str:
+        return (
+            f"{self._llm_json_generation_client.provider_name}/"
+            f"{self._llm_json_generation_client.model_name}"
+        )
 
     @classmethod
     def from_default_settings(cls) -> "ClinicalNoteRubricJudge":

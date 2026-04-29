@@ -176,6 +176,10 @@ class IcdConditionToCodeResolver:
             trap_patterns=list(bundle_template.trap_patterns),
         )
 
+    @property
+    def configured_model_label(self) -> str:
+        return f"{self._llm_client.provider_name}/{self._llm_client.model_name}"
+
     # ------------------------------------------------------------------
     # Single-condition resolution (can be called directly for debugging)
     # ------------------------------------------------------------------

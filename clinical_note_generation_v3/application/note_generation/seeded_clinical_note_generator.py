@@ -11,6 +11,7 @@ from __future__ import annotations
 import random
 from dataclasses import dataclass
 from datetime import date, timedelta
+from uuid import uuid4
 
 from clinical_note_generation_v3.core.models.constraints import (
     ClinicalBundleSemanticConstraints,
@@ -60,6 +61,7 @@ class SeededClinicalNoteGenerator:
         *,
         bundle_semantic_constraints: ClinicalBundleSemanticConstraints,
         generation_attempt_number: int = 1,
+        correlation_id: str | None = None,
     ) -> GeneratedClinicalNote:
         """
         Generate a structured synthetic clinical note for the given frozen bundle.
@@ -89,6 +91,7 @@ class SeededClinicalNoteGenerator:
             fake_patient_identity=fake_patient_identity,
             prompt_id=prompt_spec.prompt_id,
             prompt_version=prompt_spec.prompt_version,
+            correlation_id=correlation_id,
         )
 
     def generate_revised_clinical_note(
@@ -99,6 +102,7 @@ class SeededClinicalNoteGenerator:
         revision_targets: list[str],
         metadata_constraint_violations: list[IcdConstraintViolationDetail],
         generation_attempt_number: int,
+        correlation_id: str | None = None,
     ) -> GeneratedClinicalNote:
         """
         Generate a revised clinical note while preserving the fixed case definition.
@@ -136,6 +140,7 @@ class SeededClinicalNoteGenerator:
             ),
             prompt_id=prompt_spec.prompt_id,
             prompt_version=prompt_spec.prompt_version,
+            correlation_id=correlation_id or previous_generated_clinical_note.correlation_id,
         )
 
     def _create_fake_patient_identity(
@@ -230,6 +235,7 @@ class SeededClinicalNoteGenerator:
         fake_patient_identity: FakePatientIdentity,
         prompt_id: str,
         prompt_version: str,
+        correlation_id: str | None,
     ) -> GeneratedClinicalNote:
         clinical_note_text = generated_note_response.get("clinical_note_text")
         if not isinstance(clinical_note_text, str) or not clinical_note_text.strip():
@@ -244,6 +250,7 @@ class SeededClinicalNoteGenerator:
         )
 
         return GeneratedClinicalNote(
+            correlation_id=correlation_id or str(uuid4()),
             note_text=clinical_note_text.strip(),
             generation_prompt_id=prompt_id,
             generation_prompt_version=prompt_version,
@@ -251,6 +258,13 @@ class SeededClinicalNoteGenerator:
             fake_patient_name=fake_patient_identity.patient_name,
             fake_patient_mrn=fake_patient_identity.medical_record_number,
             fake_patient_date_of_birth=fake_patient_identity.date_of_birth,
+        )
+
+    @property
+    def configured_model_label(self) -> str:
+        return (
+            f"{self._llm_json_generation_client.provider_name}/"
+            f"{self._llm_json_generation_client.model_name}"
         )
 
     @classmethod
