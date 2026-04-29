@@ -23,7 +23,12 @@ DEPENDENCIES:
 """
 
 import json
+import logging
 import re
+import time
+
+
+logger = logging.getLogger(__name__)
 
 
 def parse_json_from_provider_response(raw_text: str) -> dict:
@@ -94,9 +99,13 @@ class FallbackJSONClient:
         *,
         primary_client,
         fallback_client=None,
+        max_provider_attempts: int = 2,
+        retry_sleep_seconds: float = 1.0,
     ) -> None:
         self._primary_client = primary_client
         self._fallback_client = fallback_client
+        self._max_provider_attempts = max(1, max_provider_attempts)
+        self._retry_sleep_seconds = max(0.0, retry_sleep_seconds)
         self.last_provider_name: str = primary_client.provider_name
         self.last_model_name: str = primary_client.model_name
 
@@ -128,16 +137,67 @@ class FallbackJSONClient:
             >>> isinstance("prompt", str)
             True
         """
+        primary_error: Exception | None = None
         try:
-            result = self._primary_client.generate_json(prompt, response_schema=response_schema)
+            result = self._generate_with_retries(
+                self._primary_client,
+                prompt,
+                response_schema=response_schema,
+            )
             self.last_provider_name = self._primary_client.provider_name
             self.last_model_name = self._primary_client.model_name
             return result
-        except Exception:
+        except Exception as error:
+            primary_error = error
             if not self._fallback_client:
                 raise
 
-        result = self._fallback_client.generate_json(prompt, response_schema=response_schema)
-        self.last_provider_name = self._fallback_client.provider_name
-        self.last_model_name = self._fallback_client.model_name
-        return result
+        try:
+            result = self._generate_with_retries(
+                self._fallback_client,
+                prompt,
+                response_schema=response_schema,
+            )
+            self.last_provider_name = self._fallback_client.provider_name
+            self.last_model_name = self._fallback_client.model_name
+            return result
+        except Exception as fallback_error:
+            raise RuntimeError(
+                "All configured LLM providers failed. "
+                f"Primary {self._client_label(self._primary_client)} failed with "
+                f"{type(primary_error).__name__}: {primary_error}. "
+                f"Fallback {self._client_label(self._fallback_client)} failed with "
+                f"{type(fallback_error).__name__}: {fallback_error}."
+            ) from fallback_error
+
+    def _generate_with_retries(
+        self,
+        client,
+        prompt: str,
+        *,
+        response_schema: dict | None,
+    ) -> dict:
+        last_error: Exception | None = None
+        for attempt_number in range(1, self._max_provider_attempts + 1):
+            try:
+                return client.generate_json(prompt, response_schema=response_schema)
+            except Exception as error:
+                last_error = error
+                if attempt_number >= self._max_provider_attempts:
+                    break
+                logger.warning(
+                    "LLM provider %s failed on attempt %d/%d; retrying: %s: %s",
+                    self._client_label(client),
+                    attempt_number,
+                    self._max_provider_attempts,
+                    type(error).__name__,
+                    error,
+                )
+                if self._retry_sleep_seconds:
+                    time.sleep(self._retry_sleep_seconds)
+        assert last_error is not None
+        raise last_error
+
+    @staticmethod
+    def _client_label(client) -> str:
+        return f"{client.provider_name}/{client.model_name}"
