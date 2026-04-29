@@ -27,6 +27,10 @@ from clinical_note_generation_v3.application.evaluation.condition_support_verifi
 from clinical_note_generation_v3.application.evaluation.note_quality_decision_combiner import (
     NoteQualityDecisionCombiner,
 )
+from clinical_note_generation_v3.application.icd_adjudication import (
+    ClinicalDiagnosisExtractor,
+    FinalIcdCodeAdjudicator,
+)
 from clinical_note_generation_v3.application.icd_resolution.icd_condition_to_code_resolver import (
     IcdConditionToCodeResolver,
 )
@@ -42,6 +46,14 @@ from clinical_note_generation_v3.artifacts.training_artifact_writer import Train
 from clinical_note_generation_v3.config.settings import V3PipelineSettings
 from clinical_note_generation_v3.core.services.deterministic_precheck_runner import (
     DeterministicPreCheckRunner,
+)
+from clinical_note_generation_v3.core.services.icd_code_set_validator import IcdCodeSetValidator
+from clinical_note_generation_v3.infrastructure.data_preprocessing import (
+    IcdRuleRepository,
+    OfficialICDCodeRepository,
+)
+from clinical_note_generation_v3.infrastructure.llm_provider.llm_client_factory import (
+    create_default_json_generation_client,
 )
 
 
@@ -66,6 +78,12 @@ def create_default_clinical_note_quality_pipeline(
         random_seed=settings.random_seed,
     )
 
+    official_icd_repository = OfficialICDCodeRepository(settings.official_icd_order_path)
+    icd_rule_repository = IcdRuleRepository.from_default_settings(settings)
+    icd_code_set_validator = IcdCodeSetValidator(
+        icd_rule_repository=icd_rule_repository,
+        official_icd_repository=official_icd_repository,
+    )
     icd_condition_to_code_resolver = IcdConditionToCodeResolver.from_default_settings(
         candidate_count_per_condition=settings.candidate_count
     )
@@ -81,6 +99,13 @@ def create_default_clinical_note_quality_pipeline(
     )
     condition_support_verifier = ConditionSupportVerifier.from_default_settings()
     clinical_note_rubric_judge = ClinicalNoteRubricJudge.from_default_settings()
+    final_icd_code_adjudicator = FinalIcdCodeAdjudicator(
+        clinical_diagnosis_extractor=ClinicalDiagnosisExtractor(
+            llm_json_generation_client=create_default_json_generation_client(settings)
+        ),
+        icd_condition_to_code_resolver=icd_condition_to_code_resolver,
+        icd_code_set_validator=icd_code_set_validator,
+    )
     note_quality_decision_combiner = NoteQualityDecisionCombiner(
         accept_threshold=settings.accept_score_threshold,
         revise_threshold=settings.revise_score_threshold,
@@ -99,6 +124,8 @@ def create_default_clinical_note_quality_pipeline(
         deterministic_precheck_runner=deterministic_precheck_runner,
         condition_support_verifier=condition_support_verifier,
         clinical_note_rubric_judge=clinical_note_rubric_judge,
+        final_icd_code_adjudicator=final_icd_code_adjudicator,
+        icd_code_set_validator=icd_code_set_validator,
         note_quality_decision_combiner=note_quality_decision_combiner,
         clinical_note_revision_loop=clinical_note_revision_loop,
         training_artifact_writer=TrainingArtifactWriter(),

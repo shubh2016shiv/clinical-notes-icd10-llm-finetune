@@ -69,7 +69,9 @@ def main() -> int:
     print("=" * 50)
     print(f"Generating {args.count} clinical notes...")
     print(f"Output directory: {output_dir}")
-    print(f"Gemini model: {settings.gemini_generation_model}")
+    print(f"Primary LLM model: deepseek/{settings.deepseek_model}")
+    print(f"Fallback LLM model: openai/{settings.openai_generation_model}")
+    print(f"ICD rule cache: {settings.icd_rule_cache_path}")
     print(f"Bundle templates: {settings.bundle_template_directory}")
     print("=" * 50)
 
@@ -106,6 +108,10 @@ def main() -> int:
     print(f"Deterministic hard-fail rate: {metrics.deterministic_precheck_hard_fail_rate:.1%}")
     print(f"Support verifier fail rate: {metrics.support_verifier_fail_rate:.1%}")
     print(f"ICD leakage rate: {metrics.icd_code_leakage_rate:.1%}")
+    print(f"ICD adjudication fail rate: {metrics.icd_adjudication_fail_rate:.1%}")
+    print(f"ICD code-set validation fail rate: {metrics.code_set_validation_fail_rate:.1%}")
+    top_icd_rule_failures = ", ".join(metrics.top_icd_rule_failure_types[:5])
+    print(f"Top ICD rule failure types: {top_icd_rule_failures or 'none'}")
     top_failing_criteria = ", ".join(metrics.most_frequent_failing_rubric_criteria[:5])
     print(f"Top failing rubric criteria: {top_failing_criteria or 'none'}")
     print(f"Duration: {duration:.1f}s")
@@ -120,6 +126,8 @@ def main() -> int:
             print(f"  Required revision: {result.required_revision}")
             if result.final_critique.combined_score is not None:
                 print(f"  Combined score: {result.final_critique.combined_score:.3f}")
+            print(f"  ICD-10 codes: {', '.join(result.adjudicated_icd10_codes)}")
+            print(f"  Seeded ICD-10 codes: {', '.join(result.seeded_icd10_codes)}")
             print(f"  Note text preview: {result.accepted_note.note_text[:100]}...")
         else:
             print(f"\nNote {i} [REJECTED]")
@@ -143,6 +151,9 @@ def main() -> int:
                 "total_rejected": metrics.total_rejected,
                 "acceptance_rate": metrics.acceptance_rate,
                 "revision_rate": metrics.revision_rate,
+                "icd_adjudication_fail_rate": metrics.icd_adjudication_fail_rate,
+                "code_set_validation_fail_rate": metrics.code_set_validation_fail_rate,
+                "top_icd_rule_failure_types": metrics.top_icd_rule_failure_types,
             },
             "notes": [],
         }
@@ -155,6 +166,23 @@ def main() -> int:
                     "template_id": result.seeded_bundle.template_id,
                     "required_revision": result.required_revision,
                     "combined_score": result.final_critique.combined_score,
+                    "icd10_codes": result.adjudicated_icd10_codes,
+                    "seeded_icd10_codes": result.seeded_icd10_codes,
+                    "adjudication_status": (
+                        result.adjudication_provenance.outcome
+                        if result.adjudication_provenance
+                        else "not_run"
+                    ),
+                    "adjudication_rationale": (
+                        result.adjudication_provenance.adjudication_rationale
+                        if result.adjudication_provenance
+                        else ""
+                    ),
+                    "code_set_validation": (
+                        result.code_set_validation_outcome.model_dump(mode="json")
+                        if result.code_set_validation_outcome
+                        else None
+                    ),
                     "note_text": result.accepted_note.note_text,
                     "patient_name": result.accepted_note.fake_patient_name,
                     "patient_mrn": result.accepted_note.fake_patient_mrn,
@@ -165,6 +193,18 @@ def main() -> int:
                     "status": "rejected",
                     "primary_rejection_reason": result.primary_rejection_reason,
                     "all_rejection_reasons": result.all_rejection_reasons,
+                    "icd10_codes": result.adjudicated_icd10_codes,
+                    "seeded_icd10_codes": result.seeded_icd10_codes,
+                    "adjudication_status": (
+                        result.adjudication_provenance.outcome
+                        if result.adjudication_provenance
+                        else "not_run"
+                    ),
+                    "code_set_validation": (
+                        result.code_set_validation_outcome.model_dump(mode="json")
+                        if result.code_set_validation_outcome
+                        else None
+                    ),
                 }
             results_data["notes"].append(note_data)
 

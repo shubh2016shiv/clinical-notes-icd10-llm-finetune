@@ -179,3 +179,32 @@ CONSTRAINT_EXTRACTION_RESPONSE_SCHEMA = {
     },
     "required": ["must_include_in_note", "must_not_imply_in_note"],
 }
+
+
+DIAGNOSIS_EXTRACTION_RESPONSE_SCHEMA = {
+    "type": "object",
+    "properties": {
+        "diagnoses": {
+            "type": "array",
+            "items": {
+                "type": "object",
+                "properties": {
+                    "diagnosis_name": {"type": "string"},
+                    "status": {"type": "string"},
+                    "evidence": {"type": "string"},
+                    "should_code": {"type": "boolean"},
+                    "coding_rationale": {"type": "string"},
+                },
+                "required": [
+                    "diagnosis_name",
+                    "status",
+                    "evidence",
+                    "should_code",
+                    "coding_rationale",
+                ],
+            },
+        },
+        "extraction_rationale": {"type": "string"},
+    },
+    "required": ["diagnoses", "extraction_rationale"],
+}

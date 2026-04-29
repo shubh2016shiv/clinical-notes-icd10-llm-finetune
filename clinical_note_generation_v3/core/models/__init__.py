@@ -22,6 +22,14 @@ from .icd_codes import (
     MissingCandidateCode,
 )
 
+from .icd_adjudication import (
+    ClinicalDiagnosisMention,
+    FinalIcdCodeAdjudicationOutcome,
+    IcdCodeSetValidationIssue,
+    IcdCodeSetValidationOutcome,
+)
+from .icd_rules import IcdTabularRuleNode
+
 # --- Bundle types ---
 from .bundle import (
     ClinicalBundleTemplate,
@@ -77,6 +85,11 @@ __all__ = [
     "SelectedCode",
     "RejectedCandidate",
     "MissingCandidateCode",
+    "ClinicalDiagnosisMention",
+    "FinalIcdCodeAdjudicationOutcome",
+    "IcdCodeSetValidationIssue",
+    "IcdCodeSetValidationOutcome",
+    "IcdTabularRuleNode",
     # Bundle
     "ClinicalBundleTemplate",
     "ResolvedConditionCode",

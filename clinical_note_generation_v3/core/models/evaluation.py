@@ -38,6 +38,10 @@ from pydantic import BaseModel, Field
 
 from .bundle import SeededClinicalBundle
 from .constraints import ClinicalBundleSemanticConstraints, ConstraintViolationSeverity
+from .icd_adjudication import (
+    FinalIcdCodeAdjudicationOutcome,
+    IcdCodeSetValidationOutcome,
+)
 from .note import GeneratedClinicalNote
 
 
@@ -459,6 +463,7 @@ class NoteEvaluationCritiqueResult(BaseModel):
     general_quality_rubric_scores: NoteGeneralQualityRubricScores | None = None
     icd_constraint_alignment_scores: IcdConstraintAlignmentRubricScores | None = None
     icd_constraint_violations: list[IcdConstraintViolationDetail] = Field(default_factory=list)
+    icd_adjudication_outcome: FinalIcdCodeAdjudicationOutcome | None = None
     hard_fail_reasons: list[str] = Field(default_factory=list)
     revision_targets: list[str] = Field(default_factory=list)
     combined_score: float | None = None
@@ -539,6 +544,10 @@ class AcceptedClinicalNoteResult(BaseModel):
     bundle_note_writing_constraints: ClinicalBundleSemanticConstraints
     accepted_note: GeneratedClinicalNote
     final_critique: NoteEvaluationCritiqueResult
+    adjudicated_icd10_codes: list[str] = Field(default_factory=list)
+    seeded_icd10_codes: list[str] = Field(default_factory=list)
+    code_set_validation_outcome: IcdCodeSetValidationOutcome | None = None
+    adjudication_provenance: FinalIcdCodeAdjudicationOutcome | None = None
     revision_history: list[RevisionAttemptRecord] = Field(default_factory=list)
     required_revision: bool = False
 
@@ -574,6 +583,10 @@ class RejectedClinicalNoteResult(BaseModel):
     seeded_bundle: SeededClinicalBundle
     rejected_note: GeneratedClinicalNote
     final_critique: NoteEvaluationCritiqueResult
+    adjudicated_icd10_codes: list[str] = Field(default_factory=list)
+    seeded_icd10_codes: list[str] = Field(default_factory=list)
+    code_set_validation_outcome: IcdCodeSetValidationOutcome | None = None
+    adjudication_provenance: FinalIcdCodeAdjudicationOutcome | None = None
     primary_rejection_reason: str
     all_rejection_reasons: list[str] = Field(default_factory=list)
     revision_history: list[RevisionAttemptRecord] = Field(default_factory=list)
@@ -651,6 +664,9 @@ class PipelineBatchRunMetrics(BaseModel):
     support_verifier_fail_rate: float
     near_duplicate_rejection_rate: float
     icd_code_leakage_rate: float
+    icd_adjudication_fail_rate: float = 0.0
+    code_set_validation_fail_rate: float = 0.0
+    top_icd_rule_failure_types: list[str] = Field(default_factory=list)
     most_frequent_failing_rubric_criteria: list[str] = Field(default_factory=list)
     most_frequent_rejection_reasons: dict[str, int] = Field(default_factory=dict)
     mean_combined_score_by_prompt_version: dict[str, float] = Field(default_factory=dict)

@@ -30,9 +30,16 @@ class TrainingArtifactWriter:
 
         with output_file_path.open(file_mode, encoding="utf-8") as output_file:
             for accepted_clinical_note_result in accepted_clinical_note_results:
+                adjudicated_codes = list(accepted_clinical_note_result.adjudicated_icd10_codes)
+                if not adjudicated_codes:
+                    raise RuntimeError(
+                        "Accepted note is missing adjudicated ICD-10-CM codes; "
+                        "refusing to write training labels."
+                    )
                 training_row = {
                     "clinical_note": accepted_clinical_note_result.accepted_note.note_text,
-                    "icd10_codes": accepted_clinical_note_result.seeded_bundle.icd_codes,
+                    "icd10_codes": adjudicated_codes,
+                    "seeded_icd10_codes": list(accepted_clinical_note_result.seeded_icd10_codes),
                 }
                 output_file.write(json.dumps(training_row, ensure_ascii=True) + "\n")
 

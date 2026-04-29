@@ -143,7 +143,7 @@ class ClinicalNoteRevisionLoop:
         revision_history: list[RevisionAttemptRecord] = []
 
         if initial_note_evaluation_result.final_decision == "accept":
-            return AcceptedClinicalNoteResult(
+            return _build_accepted_result(
                 seeded_bundle=bundle_semantic_constraints.seeded_bundle,
                 bundle_note_writing_constraints=bundle_semantic_constraints,
                 accepted_note=initial_generated_clinical_note,
@@ -179,6 +179,7 @@ class ClinicalNoteRevisionLoop:
                     general_quality_rubric_scores=current_note_evaluation_result.general_quality_rubric_scores,
                     icd_constraint_alignment_scores=current_note_evaluation_result.icd_constraint_alignment_scores,
                     icd_constraint_violations=current_note_evaluation_result.icd_constraint_violations,
+                    icd_adjudication_outcome=current_note_evaluation_result.icd_adjudication_outcome,
                     hard_fail_reasons=post_revision_drift_violations,
                     revision_targets=[],
                     combined_score=current_note_evaluation_result.combined_score,
@@ -207,7 +208,7 @@ class ClinicalNoteRevisionLoop:
             current_note_evaluation_result = revised_note_evaluation_result
 
             if current_note_evaluation_result.final_decision == "accept":
-                return AcceptedClinicalNoteResult(
+                return _build_accepted_result(
                     seeded_bundle=bundle_semantic_constraints.seeded_bundle,
                     bundle_note_writing_constraints=bundle_semantic_constraints,
                     accepted_note=current_generated_clinical_note,
@@ -216,7 +217,7 @@ class ClinicalNoteRevisionLoop:
                     required_revision=True,
                 )
 
-        return RejectedClinicalNoteResult(
+        return _build_rejected_result(
             seeded_bundle=bundle_semantic_constraints.seeded_bundle,
             rejected_note=current_generated_clinical_note,
             final_critique=current_note_evaluation_result,
@@ -305,3 +306,63 @@ class ClinicalNoteRevisionLoop:
         if note_evaluation_result.hard_fail_reasons:
             return note_evaluation_result.hard_fail_reasons[0]
         return "Clinical note did not reach acceptance after the allowed revision attempts."
+
+
+def _build_accepted_result(
+    *,
+    seeded_bundle,
+    bundle_note_writing_constraints,
+    accepted_note,
+    final_critique: NoteEvaluationCritiqueResult,
+    revision_history: list[RevisionAttemptRecord],
+    required_revision: bool,
+) -> AcceptedClinicalNoteResult:
+    adjudication_outcome = final_critique.icd_adjudication_outcome
+    return AcceptedClinicalNoteResult(
+        seeded_bundle=seeded_bundle,
+        bundle_note_writing_constraints=bundle_note_writing_constraints,
+        accepted_note=accepted_note,
+        final_critique=final_critique,
+        adjudicated_icd10_codes=(
+            list(adjudication_outcome.adjudicated_icd10_codes) if adjudication_outcome else []
+        ),
+        seeded_icd10_codes=list(adjudication_outcome.seeded_icd10_codes)
+        if adjudication_outcome
+        else list(seeded_bundle.icd_codes),
+        code_set_validation_outcome=(
+            adjudication_outcome.code_set_validation_outcome if adjudication_outcome else None
+        ),
+        adjudication_provenance=adjudication_outcome,
+        revision_history=revision_history,
+        required_revision=required_revision,
+    )
+
+
+def _build_rejected_result(
+    *,
+    seeded_bundle,
+    rejected_note,
+    final_critique: NoteEvaluationCritiqueResult,
+    primary_rejection_reason: str,
+    all_rejection_reasons: list[str],
+    revision_history: list[RevisionAttemptRecord],
+) -> RejectedClinicalNoteResult:
+    adjudication_outcome = final_critique.icd_adjudication_outcome
+    return RejectedClinicalNoteResult(
+        seeded_bundle=seeded_bundle,
+        rejected_note=rejected_note,
+        final_critique=final_critique,
+        adjudicated_icd10_codes=(
+            list(adjudication_outcome.adjudicated_icd10_codes) if adjudication_outcome else []
+        ),
+        seeded_icd10_codes=list(adjudication_outcome.seeded_icd10_codes)
+        if adjudication_outcome
+        else list(seeded_bundle.icd_codes),
+        code_set_validation_outcome=(
+            adjudication_outcome.code_set_validation_outcome if adjudication_outcome else None
+        ),
+        adjudication_provenance=adjudication_outcome,
+        primary_rejection_reason=primary_rejection_reason,
+        all_rejection_reasons=all_rejection_reasons,
+        revision_history=revision_history,
+    )

@@ -20,6 +20,9 @@ from clinical_note_generation_v3.prompt_specs.evaluation import (
 from clinical_note_generation_v3.prompt_specs.icd_resolution import (
     build_icd_resolution_prompt_spec as _build_icd_resolution_prompt_spec,
 )
+from clinical_note_generation_v3.prompt_specs.icd_adjudication import (
+    build_diagnosis_extraction_prompt_spec as _build_diagnosis_extraction_prompt_spec,
+)
 from clinical_note_generation_v3.prompt_specs.note_generation import (
     build_generation_prompt_spec as _build_generation_prompt_spec,
     build_revision_prompt_spec as _build_revision_prompt_spec,
@@ -75,3 +78,7 @@ def build_icd_resolution_prompt_spec(
 
 def build_constraint_extraction_prompt_spec(**kwargs):
     return _build_constraint_extraction_prompt_spec(**kwargs)
+
+
+def build_diagnosis_extraction_prompt_spec(**kwargs):
+    return _build_diagnosis_extraction_prompt_spec(**kwargs)

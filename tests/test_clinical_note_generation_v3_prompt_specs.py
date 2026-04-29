@@ -35,6 +35,7 @@ from clinical_note_generation_v3.prompt_specs.registry import (
     build_clinical_note_revision_prompt_spec,
     build_condition_support_verifier_prompt_spec,
     build_constraint_extraction_prompt_spec,
+    build_diagnosis_extraction_prompt_spec,
     build_icd_resolution_prompt_spec,
     build_rubric_judge_prompt_spec,
 )
@@ -175,6 +176,10 @@ def test_prompt_registry_builds_all_v3_prompt_families() -> None:
             long_description="Adjustment disorder with mixed anxiety and depressed mood",
             short_description="Adj disorder w anx+depressd mood",
             signals_already_extracted=[],
+        ),
+        build_diagnosis_extraction_prompt_spec(
+            generated_clinical_note=generated_note,
+            bundle_semantic_constraints=constraints,
         ),
     ]
 

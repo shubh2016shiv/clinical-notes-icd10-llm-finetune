@@ -33,7 +33,25 @@ Indexing uses OpenAI embeddings only. The provider/model is written to the
 FAISS manifest, and clinical note generation uses that exact OpenAI model for
 retrieval.
 
-## 2. Generate Clinical Notes
+## 2. Prepare ICD-10-CM Rule Cache
+
+The generation pipeline now requires structured official ICD-10-CM tabular XML
+for deterministic code-set validation. XSD and PDF files are not enough.
+
+Extract the official `icd10cm-April-1-2026-XML.zip` into
+`official_icd10cm_2026_april_1`, then run:
+
+```powershell
+python clinical_note_generation_v3\scripts\prepare_ICD10_rule_cache.py
+```
+
+If the XML file has a different name, pass it explicitly:
+
+```powershell
+python clinical_note_generation_v3\scripts\prepare_ICD10_rule_cache.py --xml-path .\official_icd10cm_2026_april_1\icd10cm-tabular-April-1-2026.xml
+```
+
+## 3. Generate Clinical Notes
 
 Generate five notes:
 
@@ -77,6 +95,8 @@ CLINICAL_V3_DEEPSEEK_MODEL=deepseek-v4-flash
 CLINICAL_V3_DEEPSEEK_BASE_URL=https://api.deepseek.com
 CLINICAL_V3_FAISS_INDEX_BATCH_SIZE=16
 CLINICAL_V3_FAISS_PERSIST_DIRECTORY=clinical_note_generation_v3\.faiss\icd10cm_2026_april_1
+CLINICAL_V3_ICD_TABULAR_XML_FILENAME=icd10cm-tabular-April-1-2026.xml
+CLINICAL_V3_ICD_RULE_CACHE_DIRECTORY=clinical_note_generation_v3\.icd_rules
 ```
 
 Gemini settings and clients remain in the codebase for future experiments, but
@@ -94,6 +114,9 @@ The note generation command prints per-note evaluation metrics:
 - support verifier result
 - general quality score
 - ICD alignment score
+- ICD adjudication result
+- adjudicated ICD-10 codes and seeded-code delta
+- ICD tabular rule validation result
 - combined score
 - final decision and revision count
 
@@ -101,4 +124,11 @@ If generation fails with a hybrid retrieval message, rebuild the index:
 
 ```powershell
 python clinical_note_generation_v3\scripts\generate_FAISS_ICD10_index.py --reset-existing
+```
+
+If generation fails with an ICD tabular XML message, extract the official XML
+release and rebuild the rule cache:
+
+```powershell
+python clinical_note_generation_v3\scripts\prepare_ICD10_rule_cache.py
 ```

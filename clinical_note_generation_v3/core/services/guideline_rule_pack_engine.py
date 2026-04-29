@@ -37,6 +37,7 @@ def run_all_guideline_rules(codes: list[str]) -> list[IcdCodeSetValidationIssue]
 # Respiratory — bronchitis subsumes nonspecific URI
 # ---------------------------------------------------------------------------
 
+
 def _bronchitis_subsumes_nonspecific_uri(
     codes: list[str],
 ) -> list[IcdCodeSetValidationIssue]:
@@ -161,9 +162,7 @@ def _diabetes_type_conflict(codes: list[str]) -> list[IcdCodeSetValidationIssue]
     contradictory classification and is a coding error in most scenarios.
     """
     present: list[str] = [
-        prefix
-        for prefix in _DIABETES_TYPE_PREFIXES
-        if any(c.startswith(prefix) for c in codes)
+        prefix for prefix in _DIABETES_TYPE_PREFIXES if any(c.startswith(prefix) for c in codes)
     ]
     if len(present) < 2:
         return []
@@ -174,7 +173,7 @@ def _diabetes_type_conflict(codes: list[str]) -> list[IcdCodeSetValidationIssue]
     }
     issues: list[IcdCodeSetValidationIssue] = []
     for i, type_a in enumerate(present):
-        for type_b in present[i + 1:]:
+        for type_b in present[i + 1 :]:
             issues.append(
                 IcdCodeSetValidationIssue(
                     severity="error",
@@ -204,6 +203,7 @@ def _diabetes_type_conflict(codes: list[str]) -> list[IcdCodeSetValidationIssue]
 # ---------------------------------------------------------------------------
 # Neoplasm — active malignancy vs personal history conflict
 # ---------------------------------------------------------------------------
+
 
 def _neoplasm_active_vs_personal_history_conflict(
     codes: list[str],

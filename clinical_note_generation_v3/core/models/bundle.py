@@ -83,6 +83,7 @@ class ResolvedConditionCode(BaseModel):
     icd_long_description: str
     resolver_prompt_id: str | None = None
     resolver_prompt_version: str | None = None
+    source_condition_names: list[str] = Field(default_factory=list)
 
 
 class SeededClinicalBundle(BaseModel):

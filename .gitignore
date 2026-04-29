@@ -55,3 +55,4 @@ clinical_note_generation_v3/runs/
 clinical_note_generation_v3/sample_data/audit_rows.jsonl
 clinical_note_generation_v3/sample_data/batch_metrics.json
 clinical_note_generation_v3/sample_data/clinical_notes_*.json
+clinical_note_generation_v3/sample_data/training_rows.jsonl

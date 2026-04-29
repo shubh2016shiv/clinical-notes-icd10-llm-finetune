@@ -26,6 +26,9 @@ from clinical_note_generation_v3.application.evaluation.condition_support_verifi
 from clinical_note_generation_v3.application.evaluation.note_quality_decision_combiner import (
     NoteQualityDecisionCombiner,
 )
+from clinical_note_generation_v3.application.icd_adjudication.final_icd_code_adjudicator import (
+    FinalIcdCodeAdjudicator,
+)
 from clinical_note_generation_v3.application.icd_resolution.icd_condition_to_code_resolver import (
     IcdConditionToCodeResolver,
     IcdResolutionFailedForConditionError,
@@ -51,6 +54,10 @@ from clinical_note_generation_v3.core.models.note import GeneratedClinicalNote
 from clinical_note_generation_v3.core.services.deterministic_precheck_runner import (
     DeterministicPreCheckRunner,
 )
+from clinical_note_generation_v3.core.services.icd_code_set_validator import (
+    IcdCodeSetValidationError,
+    IcdCodeSetValidator,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -70,6 +77,8 @@ class ClinicalNoteQualityPipeline:
         deterministic_precheck_runner: DeterministicPreCheckRunner,
         condition_support_verifier: ConditionSupportVerifier,
         clinical_note_rubric_judge: ClinicalNoteRubricJudge,
+        final_icd_code_adjudicator: FinalIcdCodeAdjudicator,
+        icd_code_set_validator: IcdCodeSetValidator,
         note_quality_decision_combiner: NoteQualityDecisionCombiner,
         clinical_note_revision_loop: ClinicalNoteRevisionLoop,
         training_artifact_writer: TrainingArtifactWriter,
@@ -87,6 +96,8 @@ class ClinicalNoteQualityPipeline:
         self._deterministic_precheck_runner = deterministic_precheck_runner
         self._condition_support_verifier = condition_support_verifier
         self._clinical_note_rubric_judge = clinical_note_rubric_judge
+        self._final_icd_code_adjudicator = final_icd_code_adjudicator
+        self._icd_code_set_validator = icd_code_set_validator
         self._note_quality_decision_combiner = note_quality_decision_combiner
         self._clinical_note_revision_loop = clinical_note_revision_loop
         self._training_artifact_writer = training_artifact_writer
@@ -122,6 +133,10 @@ class ClinicalNoteQualityPipeline:
                 selected_clinical_bundle_template
             )
         )
+        seeded_clinical_bundle = self._icd_code_set_validator.collapse_seeded_bundle_codes(
+            seeded_clinical_bundle
+        )
+        self._icd_code_set_validator.assert_valid_codes(seeded_clinical_bundle.icd_codes)
 
         bundle_semantic_constraints = (
             self._bundle_constraint_extraction_orchestrator.extract_bundle_semantic_constraints(
@@ -198,6 +213,12 @@ class ClinicalNoteQualityPipeline:
                 logger.warning(
                     "Skipping sampled bundle after ICD resolution failure: %s",
                     icd_resolution_error,
+                )
+                continue
+            except IcdCodeSetValidationError as code_set_validation_error:
+                logger.warning(
+                    "Skipping sampled bundle after ICD code-set validation failure: %s",
+                    code_set_validation_error,
                 )
                 continue
             except Exception as pipeline_iteration_error:
@@ -284,6 +305,7 @@ class ClinicalNoteQualityPipeline:
                 ),
                 general_quality_rubric_scores=None,
                 icd_constraint_alignment_scores=None,
+                icd_adjudication_outcome=None,
                 icd_constraint_violations=[],
             )
 
@@ -305,6 +327,10 @@ class ClinicalNoteQualityPipeline:
             bundle_semantic_constraints=bundle_semantic_constraints,
             condition_support_verification_outcome=condition_support_verification_outcome,
         )
+        icd_adjudication_outcome = self._final_icd_code_adjudicator.adjudicate_generated_note(
+            generated_clinical_note=generated_clinical_note,
+            bundle_semantic_constraints=bundle_semantic_constraints,
+        )
 
         return self._note_quality_decision_combiner.combine_evaluation_results(
             bundle_semantic_constraints=bundle_semantic_constraints,
@@ -312,6 +338,7 @@ class ClinicalNoteQualityPipeline:
             condition_support_verification_outcome=condition_support_verification_outcome,
             general_quality_rubric_scores=general_quality_rubric_scores,
             icd_constraint_alignment_scores=icd_constraint_alignment_scores,
+            icd_adjudication_outcome=icd_adjudication_outcome,
             icd_constraint_violations=icd_constraint_violations,
             rubric_judge_prompt_id=rubric_judge_prompt_id,
             rubric_judge_prompt_version=rubric_judge_prompt_version,
@@ -346,6 +373,21 @@ class ClinicalNoteQualityPipeline:
             if critique.icd_constraint_alignment_scores is not None
             else None
         )
+        adjudication_outcome = critique.icd_adjudication_outcome
+        adjudication_label = adjudication_outcome.outcome if adjudication_outcome else "not_run"
+        adjudicated_codes = (
+            ",".join(adjudication_outcome.adjudicated_icd10_codes)
+            if adjudication_outcome
+            else "n/a"
+        )
+        seeded_delta = _format_seeded_code_delta(adjudication_outcome)
+        code_set_status = (
+            "pass"
+            if adjudication_outcome and adjudication_outcome.code_set_validation_outcome.passed()
+            else "fail"
+            if adjudication_outcome
+            else "not_run"
+        )
         revision_count = len(clinical_note_result.revision_history)
         print(
             "[Evaluation] "
@@ -356,6 +398,10 @@ class ClinicalNoteQualityPipeline:
             f"support={support_outcome} "
             f"general={_format_optional_score(general_score)} "
             f"icd_alignment={_format_optional_score(icd_alignment_score)} "
+            f"adjudication={adjudication_label} "
+            f"codes={adjudicated_codes} "
+            f"seeded_delta={seeded_delta} "
+            f"icd_rules={code_set_status} "
             f"combined={_format_optional_score(critique.combined_score)} "
             f"decision={critique.final_decision} "
             f"revisions={revision_count}"
@@ -429,8 +475,11 @@ class ClinicalNoteQualityPipeline:
         support_verifier_fail_count = 0
         near_duplicate_rejection_count = 0
         icd_code_leakage_rejection_count = 0
+        icd_adjudication_fail_count = 0
+        code_set_validation_fail_count = 0
         rejection_reason_counter: Counter[str] = Counter()
         rubric_zero_counter: Counter[str] = Counter()
+        icd_rule_failure_counter: Counter[str] = Counter()
         mean_combined_score_by_prompt_version = self._build_average_score_by_prompt_version(
             accepted_results
         )
@@ -455,6 +504,16 @@ class ClinicalNoteQualityPipeline:
                         criterion_name
                     ) in critique.general_quality_rubric_scores.criteria_scoring_zero():
                         rubric_zero_counter[criterion_name] += 1
+                if critique.icd_adjudication_outcome is not None:
+                    if not critique.icd_adjudication_outcome.passed():
+                        icd_adjudication_fail_count += 1
+                    validation_outcome = (
+                        critique.icd_adjudication_outcome.code_set_validation_outcome
+                    )
+                    if not validation_outcome.passed():
+                        code_set_validation_fail_count += 1
+                        for issue in validation_outcome.errors():
+                            icd_rule_failure_counter[issue.rule_type] += 1
 
         for rejected_result in rejected_results:
             rejection_reason_counter[rejected_result.primary_rejection_reason] += 1
@@ -498,6 +557,15 @@ class ClinicalNoteQualityPipeline:
             icd_code_leakage_rate=(
                 icd_code_leakage_rejection_count / total_attempted if total_attempted else 0.0
             ),
+            icd_adjudication_fail_rate=(
+                icd_adjudication_fail_count / total_attempted if total_attempted else 0.0
+            ),
+            code_set_validation_fail_rate=(
+                code_set_validation_fail_count / total_attempted if total_attempted else 0.0
+            ),
+            top_icd_rule_failure_types=[
+                rule_type for rule_type, _ in icd_rule_failure_counter.most_common()
+            ],
             most_frequent_failing_rubric_criteria=[
                 criterion_name for criterion_name, _ in rubric_zero_counter.most_common()
             ],
@@ -582,3 +650,11 @@ class ClinicalNoteQualityPipeline:
 
 def _format_optional_score(score: float | None) -> str:
     return "n/a" if score is None else f"{score:.3f}"
+
+
+def _format_seeded_code_delta(adjudication_outcome) -> str:
+    if adjudication_outcome is None:
+        return "n/a"
+    added = "+[" + ",".join(adjudication_outcome.added_icd10_codes) + "]"
+    removed = "-[" + ",".join(adjudication_outcome.removed_seeded_icd10_codes) + "]"
+    return f"{added}{removed}"

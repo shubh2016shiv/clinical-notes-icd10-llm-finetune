@@ -8,9 +8,17 @@ infrastructure/data_preprocessing — ICD-10-CM order-file parsing and repositor
 
 from .icd_order_file_parser import parse_icd_order_line, iter_icd_order_records
 from .official_icd_loader import OfficialICDCodeRepository
+from .icd_rule_repository import (
+    IcdRuleRepository,
+    MissingIcdRuleDataError,
+    MANDATORY_XML_REMEDIATION,
+)
 
 __all__ = [
     "parse_icd_order_line",
     "iter_icd_order_records",
     "OfficialICDCodeRepository",
+    "IcdRuleRepository",
+    "MissingIcdRuleDataError",
+    "MANDATORY_XML_REMEDIATION",
 ]

@@ -108,6 +108,18 @@ class V3PipelineSettings(BaseSettings):
         default="icd10cm-order-April-1-2026.txt",
         description="Official ICD-10-CM order file name.",
     )
+    icd_tabular_xml_filename: str = Field(
+        default="icd10cm-tabular-April-1-2026.xml",
+        description="Official ICD-10-CM tabular XML file name.",
+    )
+    icd_rule_cache_directory: Path = Field(
+        default=PROJECT_ROOT / "clinical_note_generation_v3" / ".icd_rules",
+        description="Persistent cache directory for parsed ICD-10-CM tabular rules.",
+    )
+    icd_rule_cache_filename: str = Field(
+        default="icd10cm_2026_april_1_rules.json",
+        description="Generated deterministic ICD-10-CM tabular rule cache file.",
+    )
     faiss_persist_directory: Path = Field(
         default=PROJECT_ROOT / "clinical_note_generation_v3" / ".faiss" / "icd10cm_2026_april_1",
         description="Persistent FAISS directory for ICD candidate retrieval.",
@@ -117,7 +129,7 @@ class V3PipelineSettings(BaseSettings):
         description="Use GPU FAISS when available.",
     )
     faiss_index_batch_size: int = Field(
-        default=8,
+        default=64,
         ge=1,
         le=256,
         description="Embedding batch size used by the FAISS ICD index build CLI.",
@@ -249,6 +261,20 @@ class V3PipelineSettings(BaseSettings):
             'icd10cm-order-April-1-2026.txt'
         """
         return self.official_icd_directory / self.icd_order_filename
+
+    @property
+    def official_icd_tabular_xml_path(self) -> Path:
+        """
+        Return the configured official ICD-10-CM tabular XML path.
+        """
+        return self.official_icd_directory / self.icd_tabular_xml_filename
+
+    @property
+    def icd_rule_cache_path(self) -> Path:
+        """
+        Return the generated ICD tabular rule cache path.
+        """
+        return self.icd_rule_cache_directory / self.icd_rule_cache_filename
 
     @property
     def training_artifact_output_path(self) -> Path:
