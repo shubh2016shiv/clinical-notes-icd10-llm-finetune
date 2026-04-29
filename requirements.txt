@@ -22,6 +22,8 @@ loguru>=0.7.0           # Simplified and structured logging
 google-generativeai>=0.3.0 # Client for Gemini/Google PaLM APIs
 openai>=1.0.0           # Client for OpenAI GPT APIs
 requests>=2.31.0        # HTTP library for general API requests (e.g., ICD-10 API)
+psycopg[binary]>=3.2.0  # PostgreSQL client for accepted-note JSONB persistence
+faiss-cpu>=1.8.0        # Local FAISS vector index for ICD-10 candidate retrieval
 
 # Vector Search and Embeddings (formerly in requirements_vector.txt)
 sentence-transformers>=3.0.0 # Generating text embeddings for vector search
